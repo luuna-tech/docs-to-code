@@ -43,7 +43,14 @@ While answering, critically assess whether the question reveals missing specs:
 - Does the answer require functionality that isn't in any current spec?
 - Has an edge case surfaced that deserves its own spec?
 
-If you identify a gap, create the missing spec using the `/gen-spec` format and reference it in your answer.
+**Before creating any new spec**, validate it is not a duplicate:
+
+1. Read `pm/specs/BACKLOG.md` and scan the `Summary` column to check if any existing spec already covers the same functionality — even partially.
+2. Only if a summary looks potentially overlapping, open that specific spec file to confirm.
+3. If an existing spec partially covers it, consider whether the gap is better addressed by noting it as a suggestion in your answer (e.g., "SPEC-005 may need an additional acceptance criterion for X") rather than creating a new spec.
+4. Only create a new spec if the gap is clearly not covered by any existing spec.
+
+If you identify a valid gap, create the missing spec using the `/gen-spec` format and reference it in your answer.
 
 ## Rules
 

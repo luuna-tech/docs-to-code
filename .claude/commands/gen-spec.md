@@ -47,12 +47,14 @@ As a [actor], I want [action] so that [benefit].
 - Determine the next available SPEC ID by listing files in `pm/specs/`.
 - Each acceptance criterion must be specific and testable — no vague language like "should work well".
 - Prioritize using: `critical > high > medium > low`.
-- If writing multiple specs, also create/update `pm/specs/BACKLOG.md` with a summary table:
+- After creating specs, ALWAYS update `pm/specs/BACKLOG.md`. Add a row for each new spec to the summary table. If the file doesn't exist, create it. The table format is:
 
 ```markdown
 # Backlog
 
-| ID | Title | Priority | Dependencies | Status |
-|----|-------|----------|--------------|--------|
-| SPEC-001 | ... | critical | — | backlog |
+| ID | Title | Priority | Dependencies | Status | Summary |
+|----|-------|----------|--------------|--------|---------|
+| SPEC-001 | ... | critical | — | backlog | One-line description of what this spec covers and its scope |
 ```
+
+- The `Summary` column is critical — it must be a concise but complete description of what the spec covers, specific enough to determine overlap with other specs without reading the full file.
