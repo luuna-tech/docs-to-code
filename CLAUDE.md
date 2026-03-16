@@ -39,7 +39,10 @@ orchestrator.sh pm-seed <prompt>           # Generate initial backlog
 orchestrator.sh pm-answer-pending          # Answer all pending questions
 orchestrator.sh dev-implement SPEC-XXX     # Implement a spec (dev→pm→dev loop)
 orchestrator.sh dev-implement-next         # Auto-pick and implement next eligible spec
+orchestrator.sh dev-auto                   # Unattended: implement all eligible specs continuously
 ```
+
+Stop `dev-auto` with `Ctrl+C` or `touch .agents/.stop` from another terminal.
 
 ## Configuration
 
@@ -52,4 +55,5 @@ orchestrator.sh dev-implement-next         # Auto-pick and implement next eligib
 - Agent identity files use YAML frontmatter + markdown body (same pattern as specs)
 - Skills are Claude Code slash commands in `.claude/commands/`
 - The orchestrator invokes agents via `claude -p` with scoped `--allowedTools`
+- Both agents have web access (WebSearch, WebFetch) for research
 - PM Agent has no Bash access (read/write only); Dev Agent has Bash for tests/builds
