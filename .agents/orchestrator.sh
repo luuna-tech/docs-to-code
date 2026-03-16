@@ -48,6 +48,9 @@ Commands:
 
   dev-implement-next         Find and implement the next eligible spec from the backlog.
 
+  dev-auto                   Unattended mode: continuously pick and implement specs.
+                             Stop with Ctrl+C or 'touch .agents/.stop' from another terminal.
+
 Examples:
   $(basename "$0") -v pm-seed "Marketplace de muebles con catálogo, carrito y checkout"
   $(basename "$0") pm-seed docs/project-vision.md
@@ -56,6 +59,7 @@ Examples:
   $(basename "$0") dev-implement SPEC-001
   $(basename "$0") -v --max-cycles 5 dev-implement SPEC-002
   $(basename "$0") dev-implement-next
+  $(basename "$0") -v dev-auto
 
 EOF
   exit 1
@@ -239,7 +243,7 @@ cmd_dev_implement() {
 
   if [ ! -f "$spec_file" ]; then
     echo "[orchestrator] Error: Spec file not found: $spec_file"
-    exit 1
+    return 1
   fi
 
   mkdir -p "$TASKS_DIR"
@@ -317,18 +321,25 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS"
   return 1
 }
 
-cmd_dev_implement_next() {
-  echo "[orchestrator] Resolving next eligible spec from backlog..."
-
-  local next_spec
-  next_spec="$(cd "$PROJECT_ROOT" && claude -p "Read pm/specs/BACKLOG.md. Find the highest-priority spec with status 'backlog' whose dependencies are ALL either empty or have status 'done' (check each dependency's status by reading its spec file in pm/specs/).
+# Resolve the next eligible spec from the backlog.
+# Prints the SPEC-ID to stdout, or "NONE" if nothing is eligible.
+resolve_next_spec() {
+  local result
+  result="$(cd "$PROJECT_ROOT" && claude -p "Read pm/specs/BACKLOG.md. Find the highest-priority spec with status 'backlog' whose dependencies are ALL either empty or have status 'done' (check each dependency's status by reading its spec file in pm/specs/).
 
 Priority order: critical > high > medium > low. For specs with equal priority, prefer the one listed first (lower SPEC number).
 
 Reply with ONLY the SPEC-ID (e.g., SPEC-001) and nothing else. If no eligible spec exists, reply with NONE." --allowedTools "Read,Glob,Grep" 2>/dev/null)"
 
   # Trim whitespace
-  next_spec="$(echo "$next_spec" | tr -d '[:space:]')"
+  echo "$result" | tr -d '[:space:]'
+}
+
+cmd_dev_implement_next() {
+  echo "[orchestrator] Resolving next eligible spec from backlog..."
+
+  local next_spec
+  next_spec="$(resolve_next_spec)"
 
   if [ "$next_spec" = "NONE" ] || [ -z "$next_spec" ]; then
     echo "[orchestrator] No eligible spec found. All specs are either done, in progress, or have unmet dependencies."
@@ -337,6 +348,86 @@ Reply with ONLY the SPEC-ID (e.g., SPEC-001) and nothing else. If no eligible sp
 
   echo "[orchestrator] Next eligible spec: $next_spec"
   cmd_dev_implement "$next_spec"
+}
+
+# Check if a stop signal has been received (stop file or SIGINT flag)
+_STOP_REQUESTED=""
+check_stop() {
+  if [ -n "$_STOP_REQUESTED" ] || [ -f "$SCRIPT_DIR/.stop" ]; then
+    return 0  # stop requested
+  fi
+  return 1    # keep going
+}
+
+ts() { date '+%H:%M:%S'; }
+
+cmd_dev_auto() {
+  local completed=0
+  local failed=0
+
+  # Clean up leftover stop file from a previous run
+  rm -f "$SCRIPT_DIR/.stop"
+
+  # Trap SIGINT: set flag so we exit gracefully after the current operation
+  trap '_STOP_REQUESTED=1; echo ""; echo "[orchestrator] [$(ts)] Ctrl+C received — will stop after current operation."' INT
+
+  echo ""
+  echo "[orchestrator] ========================================="
+  echo "[orchestrator]         UNATTENDED MODE"
+  echo "[orchestrator] ========================================="
+  echo "[orchestrator] To stop: Ctrl+C or 'touch .agents/.stop'"
+  echo "[orchestrator] Max cycles per spec: $MAX_CYCLES"
+  echo ""
+
+  while true; do
+    # --- Check stop before resolving ---
+    if check_stop; then
+      echo "[orchestrator] [$(ts)] Stop signal received."
+      break
+    fi
+
+    echo "[orchestrator] [$(ts)] Resolving next eligible spec..."
+    local next_spec
+    next_spec="$(resolve_next_spec)"
+
+    if [ "$next_spec" = "NONE" ] || [ -z "$next_spec" ]; then
+      echo "[orchestrator] [$(ts)] No more eligible specs."
+      break
+    fi
+
+    # --- Check stop before implementing ---
+    if check_stop; then
+      echo "[orchestrator] [$(ts)] Stop signal received."
+      break
+    fi
+
+    echo ""
+    echo "[orchestrator] [$(ts)] --- Starting $next_spec (completed: $completed, failed: $failed) ---"
+
+    # Run dev-implement, capture exit code without triggering set -e
+    local result=0
+    cmd_dev_implement "$next_spec" || result=$?
+
+    if [ "$result" -eq 0 ]; then
+      completed=$((completed + 1))
+      echo "[orchestrator] [$(ts)] $next_spec completed."
+    else
+      failed=$((failed + 1))
+      echo "[orchestrator] [$(ts)] $next_spec failed (exit $result). Moving on."
+    fi
+
+    echo ""
+  done
+
+  # Restore default signal handling and clean up
+  trap - INT
+  rm -f "$SCRIPT_DIR/.stop"
+
+  echo ""
+  echo "[orchestrator] ========================================="
+  echo "[orchestrator]         SESSION SUMMARY"
+  echo "[orchestrator]  Completed: $completed | Failed: $failed"
+  echo "[orchestrator] ========================================="
 }
 
 # --- Main ---
@@ -380,6 +471,9 @@ case "$command" in
     ;;
   dev-implement-next)
     cmd_dev_implement_next
+    ;;
+  dev-auto)
+    cmd_dev_auto
     ;;
   *)
     echo "Unknown command: $command"
