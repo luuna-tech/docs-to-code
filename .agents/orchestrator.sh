@@ -7,6 +7,7 @@ CONFIG_FILE="$SCRIPT_DIR/config.yaml"
 SPECS_DIR="$PROJECT_ROOT/pm/specs"
 QUESTIONS_DIR="$PROJECT_ROOT/pm/questions"
 TASKS_DIR="$PROJECT_ROOT/pm/tasks"
+LOGS_DIR="$SCRIPT_DIR/logs"
 
 # Tools: PM gets filesystem + web; Dev adds Bash for running tests/builds
 AGENT_TOOLS="Read,Write,Edit,Glob,Grep,WebSearch,WebFetch"
@@ -68,11 +69,12 @@ EOF
 }
 
 # Invoke an agent with a prompt. Reads the agent identity file and appends the task.
-# Args: <agent_file> <task> [tools_override]
+# Args: <agent_file> <task> [tools_override] [log_label]
 invoke_agent() {
   local agent_file="$1"
   local task="$2"
   local tools="${3:-$AGENT_TOOLS}"
+  local log_label="${4:-}"
 
   local identity
   identity="$(awk 'NR==1 && /^---$/{fm=1; next} fm && /^---$/{fm=0; next} !fm{print}' "$SCRIPT_DIR/$agent_file")"
@@ -85,8 +87,19 @@ invoke_agent() {
 
 $task"
 
+  # Prepare log file
+  mkdir -p "$LOGS_DIR"
+  local agent_name="${agent_file%.md}"
+  local timestamp
+  timestamp="$(date '+%Y-%m-%d_%H-%M-%S')"
+  local log_file="$LOGS_DIR/${timestamp}_${agent_name}${log_label:+_${log_label}}.log"
+
+  echo "[orchestrator] Log: $log_file"
+
   if [ -n "$VERBOSE" ]; then
+    # Stream-json mode: log raw JSON, display filtered human-readable output
     (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools" --output-format stream-json --verbose) | \
+      tee "$log_file" | \
       jq --unbuffered -r '
         if .type == "assistant" then
           .message.content[]? |
@@ -98,7 +111,7 @@ $task"
         else empty end
       '
   else
-    (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools")
+    (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools") | tee "$log_file"
   fi
 }
 
@@ -250,7 +263,7 @@ Use /gen-spec to create each spec. After creating all specs, ensure pm/specs/BAC
 
 ## Project Description
 
-$prompt"
+$prompt" "" "seed"
 }
 
 cmd_pm_answer() {
@@ -276,7 +289,7 @@ cmd_pm_answer() {
 
   invoke_agent "pm.md" "Answer the developer question in: $question_file
 
-Use /gen-answer to write the answer. If you discover gaps in the backlog, use /gen-spec to create new specs."
+Use /gen-answer to write the answer. If you discover gaps in the backlog, use /gen-spec to create new specs." "" "answer_$(basename "$question_file" .md)"
 }
 
 cmd_pm_answer_pending() {
@@ -345,7 +358,7 @@ Read pm/specs/${spec_id}.md and follow your mode of operation (Plan or Implement
 
 If you have questions, use /gen-question to file them and then stop.
 If all dependencies are met and you can proceed, implement the spec completely.
-Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS"
+Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" "${spec_id}_cycle${cycle}"
 
     echo ""
 

@@ -1,0 +1,5 @@
+# Agent logs (operational, not part of the framework)
+.agents/logs/
+
+# Stop signal file
+.agents/.stop
