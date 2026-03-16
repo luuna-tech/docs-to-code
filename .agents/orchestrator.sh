@@ -99,7 +99,7 @@ $task"
   if [ -n "$VERBOSE" ]; then
     # Stream-json mode: log raw JSON, display filtered human-readable output
     (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools" --output-format stream-json --verbose) | \
-      tee "$log_file" | \
+      stdbuf -oL tee "$log_file" | \
       jq --unbuffered -r '
         if .type == "assistant" then
           .message.content[]? |
