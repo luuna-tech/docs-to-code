@@ -177,25 +177,45 @@ answer_pending_for_spec() {
 }
 
 # Print a summary of the current project state: specs, questions, tasks.
+# Args: [--verbose] — when set, list each spec individually
 show_status() {
+  local verbose_status=""
+  [ "${1:-}" = "--verbose" ] && verbose_status=1
+
   local total=0 s_backlog=0 s_in_progress=0 s_done=0
   local q_total=0 q_answered=0 q_pending=0
   local t_total=0 t_planning=0 t_implementing=0 t_done=0 t_blocked=0
+
+  # Collect spec details for verbose output
+  local spec_lines=""
 
   # --- Specs ---
   for spec_file in "$SPECS_DIR"/SPEC-*.md; do
     [ -f "$spec_file" ] || continue
     total=$((total + 1))
-    local st
+    local st id title
     st="$(grep -m1 '^status:' "$spec_file" | awk '{print $2}')"
+    id="$(grep -m1 '^id:' "$spec_file" | awk '{print $2}')"
+    title="$(grep -m1 '^title:' "$spec_file" | sed 's/^title:[[:space:]]*//' | tr -d '"')"
     case "$st" in
       backlog)     s_backlog=$((s_backlog + 1)) ;;
       in_progress) s_in_progress=$((s_in_progress + 1)) ;;
       done)        s_done=$((s_done + 1)) ;;
     esac
+
+    if [ -n "$verbose_status" ]; then
+      local marker="  "
+      case "$st" in
+        done)        marker="x " ;;
+        in_progress) marker="> " ;;
+        backlog)     marker="  " ;;
+      esac
+      spec_lines="${spec_lines}  [${marker}] ${id} — ${title} (${st})\n"
+    fi
   done
 
   # --- Questions ---
+  local question_lines=""
   for qfile in "$QUESTIONS_DIR"/*.md; do
     [ -f "$qfile" ] || continue
     [[ "$qfile" == *.answer.md ]] && continue
@@ -205,8 +225,10 @@ show_status() {
     qbase="$(basename "$qfile" .md)"
     if [ -f "$QUESTIONS_DIR/${qbase}.answer.md" ]; then
       q_answered=$((q_answered + 1))
+      [ -n "$verbose_status" ] && question_lines="${question_lines}  [x ] ${qbase} — answered\n"
     else
       q_pending=$((q_pending + 1))
+      [ -n "$verbose_status" ] && question_lines="${question_lines}  [  ] ${qbase} — pending\n"
     fi
   done
 
@@ -226,7 +248,13 @@ show_status() {
 
   # --- Display ---
   echo "[status] Specs:     $total total | $s_done done | $s_in_progress in progress | $s_backlog backlog"
+  if [ -n "$verbose_status" ] && [ -n "$spec_lines" ]; then
+    echo -e "$spec_lines" | head -n -1
+  fi
   echo "[status] Questions: $q_total total | $q_answered answered | $q_pending pending"
+  if [ -n "$verbose_status" ] && [ -n "$question_lines" ]; then
+    echo -e "$question_lines" | head -n -1
+  fi
   echo "[status] Tasks:     $t_total total | $t_done done | $t_implementing implementing | $t_planning planning | $t_blocked blocked"
 
   # Progress bar
@@ -542,7 +570,11 @@ fi
 
 case "$command" in
   status)
-    show_status
+    if [ -n "$VERBOSE" ]; then
+      show_status --verbose
+    else
+      show_status
+    fi
     ;;
   pm-seed)
     [ $# -lt 1 ] && { echo "Error: pm-seed requires a prompt argument"; usage; }
