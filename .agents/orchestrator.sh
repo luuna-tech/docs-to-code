@@ -8,10 +8,14 @@ QUESTIONS_DIR="$PROJECT_ROOT/pm/questions"
 
 # Tools agents need for filesystem access
 AGENT_TOOLS="Read,Write,Edit,Glob,Grep"
+VERBOSE=""
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <command> [options]
+Usage: $(basename "$0") [-v] <command> [options]
+
+Options:
+  -v, --verbose   Show agent tool calls and progress in real time.
 
 Commands:
   pm-seed <prompt|file>   Generate initial backlog from a high-level description.
@@ -23,10 +27,10 @@ Commands:
   pm-answer-pending       Find and answer all unanswered questions in pm/questions/.
 
 Examples:
-  $(basename "$0") pm-seed "Marketplace de muebles con catálogo, carrito y checkout"
+  $(basename "$0") -v pm-seed "Marketplace de muebles con catálogo, carrito y checkout"
   $(basename "$0") pm-seed docs/project-vision.md
   $(basename "$0") pm-answer pm/questions/SPEC-003-q1.md
-  $(basename "$0") pm-answer-pending
+  $(basename "$0") -v pm-answer-pending
 
 EOF
   exit 1
@@ -38,7 +42,7 @@ invoke_agent() {
   local task="$2"
 
   local identity
-  identity="$(cat "$SCRIPT_DIR/$agent_file")"
+  identity="$(awk 'NR==1 && /^---$/{fm=1; next} fm && /^---$/{fm=0; next} !fm{print}' "$SCRIPT_DIR/$agent_file")"
 
   local full_prompt="$identity
 
@@ -48,7 +52,10 @@ invoke_agent() {
 
 $task"
 
-  (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$AGENT_TOOLS")
+  local verbose_flag=""
+  [ -n "$VERBOSE" ] && verbose_flag="--verbose"
+
+  (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$AGENT_TOOLS" $verbose_flag)
 }
 
 # --- Commands ---
@@ -128,6 +135,16 @@ cmd_pm_answer_pending() {
 }
 
 # --- Main ---
+
+[ $# -lt 1 ] && usage
+
+# Parse global flags
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    -v|--verbose) VERBOSE=1; shift ;;
+    *) echo "Unknown option: $1"; usage ;;
+  esac
+done
 
 [ $# -lt 1 ] && usage
 
