@@ -8,9 +8,9 @@ SPECS_DIR="$PROJECT_ROOT/pm/specs"
 QUESTIONS_DIR="$PROJECT_ROOT/pm/questions"
 TASKS_DIR="$PROJECT_ROOT/pm/tasks"
 
-# Tools: PM gets filesystem only, Dev also gets Bash for running tests/builds
-AGENT_TOOLS="Read,Write,Edit,Glob,Grep"
-DEV_AGENT_TOOLS="Read,Write,Edit,Glob,Grep,Bash"
+# Tools: PM gets filesystem + web; Dev adds Bash for running tests/builds
+AGENT_TOOLS="Read,Write,Edit,Glob,Grep,WebSearch,WebFetch"
+DEV_AGENT_TOOLS="Read,Write,Edit,Glob,Grep,Bash,WebSearch,WebFetch"
 VERBOSE=""
 
 # --- Load config (defaults, then override from config.yaml) ---
