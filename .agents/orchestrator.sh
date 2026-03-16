@@ -452,6 +452,8 @@ cmd_dev_auto() {
       break
     fi
 
+    show_status
+    echo ""
     echo "[orchestrator] [$(ts)] Resolving next eligible spec..."
     local next_spec
     next_spec="$(resolve_next_spec)"
