@@ -51,6 +51,8 @@ Commands:
   dev-auto                   Unattended mode: continuously pick and implement specs.
                              Stop with Ctrl+C or 'touch .agents/.stop' from another terminal.
 
+  status                     Show backlog summary: specs, questions, and tasks.
+
 Examples:
   $(basename "$0") -v pm-seed "Marketplace de muebles con catálogo, carrito y checkout"
   $(basename "$0") pm-seed docs/project-vision.md
@@ -159,6 +161,70 @@ answer_pending_for_spec() {
   done
 
   return 0
+}
+
+# Print a summary of the current project state: specs, questions, tasks.
+show_status() {
+  local total=0 s_backlog=0 s_in_progress=0 s_done=0
+  local q_total=0 q_answered=0 q_pending=0
+  local t_total=0 t_planning=0 t_implementing=0 t_done=0 t_blocked=0
+
+  # --- Specs ---
+  for spec_file in "$SPECS_DIR"/SPEC-*.md; do
+    [ -f "$spec_file" ] || continue
+    total=$((total + 1))
+    local st
+    st="$(grep -m1 '^status:' "$spec_file" | awk '{print $2}')"
+    case "$st" in
+      backlog)     s_backlog=$((s_backlog + 1)) ;;
+      in_progress) s_in_progress=$((s_in_progress + 1)) ;;
+      done)        s_done=$((s_done + 1)) ;;
+    esac
+  done
+
+  # --- Questions ---
+  for qfile in "$QUESTIONS_DIR"/*.md; do
+    [ -f "$qfile" ] || continue
+    [[ "$qfile" == *.answer.md ]] && continue
+    q_total=$((q_total + 1))
+
+    local qbase
+    qbase="$(basename "$qfile" .md)"
+    if [ -f "$QUESTIONS_DIR/${qbase}.answer.md" ]; then
+      q_answered=$((q_answered + 1))
+    else
+      q_pending=$((q_pending + 1))
+    fi
+  done
+
+  # --- Tasks ---
+  for task_file in "$TASKS_DIR"/SPEC-*.md; do
+    [ -f "$task_file" ] || continue
+    t_total=$((t_total + 1))
+    local ts
+    ts="$(grep -m1 '^status:' "$task_file" | awk '{print $2}')"
+    case "$ts" in
+      planning)      t_planning=$((t_planning + 1)) ;;
+      implementing)  t_implementing=$((t_implementing + 1)) ;;
+      done)          t_done=$((t_done + 1)) ;;
+      blocked)       t_blocked=$((t_blocked + 1)) ;;
+    esac
+  done
+
+  # --- Display ---
+  echo "[status] Specs:     $total total | $s_done done | $s_in_progress in progress | $s_backlog backlog"
+  echo "[status] Questions: $q_total total | $q_answered answered | $q_pending pending"
+  echo "[status] Tasks:     $t_total total | $t_done done | $t_implementing implementing | $t_planning planning | $t_blocked blocked"
+
+  # Progress bar
+  if [ "$total" -gt 0 ]; then
+    local pct=$((s_done * 100 / total))
+    local filled=$((pct / 5))
+    local empty=$((20 - filled))
+    local bar
+    bar="$(printf '%0.s#' $(seq 1 $filled 2>/dev/null))$(printf '%0.s-' $(seq 1 $empty 2>/dev/null))"
+    echo "[status] Progress:  [${bar}] ${pct}%"
+  fi
 }
 
 # --- Commands ---
@@ -453,7 +519,16 @@ done
 command="$1"
 shift
 
+# Show status before any command (except status itself, to avoid double print)
+if [ "$command" != "status" ]; then
+  show_status
+  echo ""
+fi
+
 case "$command" in
+  status)
+    show_status
+    ;;
   pm-seed)
     [ $# -lt 1 ] && { echo "Error: pm-seed requires a prompt argument"; usage; }
     cmd_pm_seed "$1"
