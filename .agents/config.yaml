@@ -1,0 +1,8 @@
+# Meta-project configuration
+# Used by the orchestrator and agents to locate project paths and tune behavior.
+
+project:
+  source_dir: src/          # where the dev agent writes implementation code (relative to project root)
+
+orchestrator:
+  max_cycles: 3             # dev→pm→dev cycles before requiring human intervention
