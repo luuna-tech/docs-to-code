@@ -20,6 +20,7 @@ MAX_CYCLES=3
 SOURCE_DIR="src/"
 PM_MODEL=""
 DEV_MODEL=""
+ARCH_MODEL=""
 
 if [ -f "$CONFIG_FILE" ]; then
   _cfg_val() { grep -m1 "^[[:space:]]*$1:" "$CONFIG_FILE" | sed "s/^[^:]*:[[:space:]]*//" | sed 's/[[:space:]]*#.*//'; }
@@ -31,7 +32,9 @@ if [ -f "$CONFIG_FILE" ]; then
   [ -n "$_pm" ] && PM_MODEL="$_pm"
   _dev="$(_cfg_val dev_model)"
   [ -n "$_dev" ] && DEV_MODEL="$_dev"
-  unset _cfg_val _max _src _pm _dev
+  _arch="$(_cfg_val arch_model)"
+  [ -n "$_arch" ] && ARCH_MODEL="$_arch"
+  unset _cfg_val _max _src _pm _dev _arch
 fi
 
 usage() {
@@ -63,6 +66,18 @@ Commands:
   dev-auto                   Unattended mode: continuously pick and implement specs.
                              Stop with Ctrl+C or 'touch .agents/.stop' from another terminal.
 
+  arch-init <prompt|file>    Generate initial architecture doc (pm/architecture.md).
+                             Pass tech stack, conventions, and constraints.
+
+  arch-add <prompt|file>     Update architecture doc with new guidelines.
+                             Requires pm/architecture.md to exist.
+
+  arch-add-interactive       Start a conversation with the Architect to discuss
+                             trade-offs and update architecture interactively.
+
+  arch-review                Review codebase for compliance with architecture doc.
+                             Generates corrective specs for deviations found.
+
   status                     Show backlog summary: specs, questions, and tasks.
 
 Examples:
@@ -75,6 +90,10 @@ Examples:
   $(basename "$0") dev-implement-next
   $(basename "$0") pm-add "Add user authentication with email/password"
   $(basename "$0") pm-add-interactive
+  $(basename "$0") arch-init "React 18 + TypeScript frontend, Express backend, PostgreSQL"
+  $(basename "$0") arch-add "Add Redis caching layer for API responses"
+  $(basename "$0") arch-add-interactive
+  $(basename "$0") arch-review
   $(basename "$0") -v dev-auto
 
 EOF
@@ -439,6 +458,143 @@ You are in an interactive session with a stakeholder who wants to add a new requ
   (cd "$PROJECT_ROOT" && claude --append-system-prompt "$system_prompt" --allowedTools "$AGENT_TOOLS" $model_flag)
 }
 
+cmd_arch_init() {
+  local input="$1"
+  local prompt
+
+  if [ -f "$input" ]; then
+    prompt="$(cat "$input")"
+    echo "[orchestrator] Reading guidelines from file: $input"
+  else
+    prompt="$input"
+  fi
+
+  echo "[orchestrator] Invoking Architect Agent — mode: init"
+  echo "[orchestrator] Working directory: $PROJECT_ROOT"
+  echo "---"
+
+  invoke_agent "architect.md" "Generate the initial architecture document for this project.
+
+## Process
+
+1. Read docs/AGENT_INDEX.md and all relevant domain documentation.
+2. Read pm/specs/BACKLOG.md to understand what is planned.
+3. Use /gen-arch to create pm/architecture.md based on the guidelines below.
+4. If the architecture implies foundational work not covered by existing specs, create those specs with /gen-spec and update pm/specs/BACKLOG.md.
+
+**Source directory:** \`$SOURCE_DIR\`
+
+## Architecture Guidelines
+
+$prompt" "" "arch_init" "$ARCH_MODEL"
+}
+
+cmd_arch_add() {
+  local input="$1"
+  local prompt
+
+  if [ -f "$input" ]; then
+    prompt="$(cat "$input")"
+    echo "[orchestrator] Reading guidelines from file: $input"
+  else
+    prompt="$input"
+  fi
+
+  if [ ! -f "$PROJECT_ROOT/pm/architecture.md" ]; then
+    echo "[orchestrator] Error: pm/architecture.md does not exist. Run arch-init first."
+    exit 1
+  fi
+
+  echo "[orchestrator] Invoking Architect Agent — mode: add"
+  echo "[orchestrator] Working directory: $PROJECT_ROOT"
+  echo "---"
+
+  invoke_agent "architect.md" "Update the architecture document with new guidelines.
+
+## Process
+
+1. Read the current pm/architecture.md.
+2. Read pm/specs/BACKLOG.md to understand the current state.
+3. Analyze the change requested below and its implications.
+4. Use /gen-arch to update the doc (merge with existing content, do NOT overwrite unchanged sections).
+5. If the update requires implementation work, generate migration or change specs with /gen-spec and update pm/specs/BACKLOG.md.
+
+**Source directory:** \`$SOURCE_DIR\`
+
+## Requested Change
+
+$prompt" "" "arch_add" "$ARCH_MODEL"
+}
+
+cmd_arch_add_interactive() {
+  echo "[orchestrator] Starting interactive Architect session..."
+  echo "[orchestrator] Discuss architectural trade-offs and guidelines."
+  echo "[orchestrator] When aligned, the Architect will update the doc and generate specs."
+  echo "[orchestrator] Type 'exit' or Ctrl+C to end the session."
+  echo "---"
+
+  local identity
+  identity="$(awk 'NR==1 && /^---$/{fm=1; next} fm && /^---$/{fm=0; next} !fm{print}' "$SCRIPT_DIR/architect.md")"
+
+  local system_prompt="$identity
+
+---
+
+# Mode: Interactive Architecture Discussion
+
+You are in an interactive session with a stakeholder who wants to discuss and update the project's architecture.
+
+## Your process
+
+1. At the START of the conversation, read pm/architecture.md (if it exists), pm/specs/BACKLOG.md, and docs/AGENT_INDEX.md to understand the current state. Do this silently — do not dump the contents to the user.
+2. Listen to the user's architectural concern or proposal.
+3. Discuss trade-offs, ask about constraints, and present alternatives with pros/cons.
+4. When aligned on the approach, summarize the changes for confirmation.
+5. Once confirmed, update pm/architecture.md using /gen-arch and generate any needed specs using /gen-spec (update pm/specs/BACKLOG.md).
+
+## Rules
+
+- Ask focused questions — one or two at a time, not a wall of questions.
+- Ground your recommendations in the existing documentation from docs/.
+- Present trade-offs honestly — every decision has costs.
+- Do not update the architecture doc until the user confirms.
+- After updating, tell the user: 'Architecture updated. You can discuss another topic or type /quit to exit.'
+
+**Source directory:** \`$SOURCE_DIR\`"
+
+  local model_flag=""
+  [ -n "$ARCH_MODEL" ] && model_flag="--model $ARCH_MODEL"
+
+  (cd "$PROJECT_ROOT" && claude --append-system-prompt "$system_prompt" --allowedTools "$AGENT_TOOLS" $model_flag)
+}
+
+cmd_arch_review() {
+  if [ ! -f "$PROJECT_ROOT/pm/architecture.md" ]; then
+    echo "[orchestrator] Error: pm/architecture.md does not exist. Run arch-init first."
+    exit 1
+  fi
+
+  echo "[orchestrator] Invoking Architect Agent — mode: review"
+  echo "[orchestrator] Working directory: $PROJECT_ROOT"
+  echo "---"
+
+  invoke_agent "architect.md" "Review the codebase for compliance with the architecture document.
+
+## Process
+
+1. Read pm/architecture.md (the expected standard).
+2. Explore the source code in \`$SOURCE_DIR\` using Glob and Grep to discover the actual structure, frameworks, patterns, and conventions in use.
+3. Compare actual state against each guideline in the architecture doc.
+4. For each deviation found:
+   - Check if a spec in pm/specs/ already covers this gap.
+   - If no existing spec covers it, create a corrective spec with /gen-spec and update pm/specs/BACKLOG.md.
+   - Set priority: critical for structural issues, high for convention violations, medium for minor inconsistencies.
+5. Only flag deviations from EXPLICIT guidelines in the architecture doc. Do NOT impose preferences that are not declared.
+6. Output a summary with: total deviations found, existing specs that already cover gaps, and new specs created.
+
+**Source directory:** \`$SOURCE_DIR\`" "" "arch_review" "$ARCH_MODEL"
+}
+
 cmd_dev_implement() {
   local spec_id="$1"
   local spec_file="$SPECS_DIR/${spec_id}.md"
@@ -478,6 +634,8 @@ cmd_dev_implement() {
 Read pm/specs/${spec_id}.md and follow your mode of operation (Plan or Implement) based on the spec's current status and the existence of pm/tasks/${spec_id}.md.
 
 **Source directory:** All implementation code must be written inside \`$SOURCE_DIR\` (relative to project root). Create it if it doesn't exist.
+
+**Architecture:** If pm/architecture.md exists, read it and follow its guidelines.
 
 If you have questions, use /gen-question to file them and then stop.
 If all dependencies are met and you can proceed, implement the spec completely.
@@ -711,6 +869,20 @@ case "$command" in
     ;;
   dev-auto)
     cmd_dev_auto
+    ;;
+  arch-init)
+    [ $# -lt 1 ] && { echo "Error: arch-init requires a prompt or file path"; usage; }
+    cmd_arch_init "$1"
+    ;;
+  arch-add)
+    [ $# -lt 1 ] && { echo "Error: arch-add requires a prompt or file path"; usage; }
+    cmd_arch_add "$1"
+    ;;
+  arch-add-interactive)
+    cmd_arch_add_interactive
+    ;;
+  arch-review)
+    cmd_arch_review
     ;;
   *)
     echo "Unknown command: $command"

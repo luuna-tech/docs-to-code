@@ -8,20 +8,22 @@ A multi-agent orchestration framework built on [Claude Code](https://docs.anthro
                           orchestrator.sh
                                |
               +----------------+----------------+
-              |                                 |
-         PM Agent                          Dev Agent
-    (product manager)                   (developer)
-              |                                 |
-    - reads docs/                     - reads specs
-    - generates specs                 - plans implementation
-    - answers dev questions           - asks PM when blocked
-    - detects backlog gaps            - writes code
+              |                |                |
+         PM Agent      Architect Agent     Dev Agent
+    (product manager)   (architect)       (developer)
+              |                |                |
+    - reads docs/       - reads docs/     - reads specs
+    - generates specs   - defines stack   - reads architecture
+    - answers questions - sets conventions - plans implementation
+    - detects gaps      - reviews code    - asks PM when blocked
+                        - corrective specs - writes code
 ```
 
-The orchestrator coordinates two specialized agents:
+The orchestrator coordinates three specialized agents:
 
 1. **PM Agent** reads your domain documentation (`docs/`), decomposes the project into specs, and answers implementation questions grounded in the docs.
-2. **Dev Agent** picks specs from the backlog, plans the implementation, asks the PM when something is ambiguous, and writes the code.
+2. **Architect Agent** establishes technical direction in `pm/architecture.md` — stack, structure, conventions, patterns. Reviews code for compliance and generates corrective specs when the codebase deviates.
+3. **Dev Agent** picks specs from the backlog, reads the architecture guidelines, plans the implementation, asks the PM when something is ambiguous, and writes the code.
 
 Communication between agents happens through files — specs, questions, answers, and task plans — all in markdown with YAML frontmatter. The orchestrator manages the loop: invoke dev, check if there are questions, invoke PM to answer, re-invoke dev to continue.
 
@@ -85,7 +87,25 @@ The Dev Agent will:
 5. The orchestrator invokes PM to answer, then re-invokes dev
 6. Dev implements the code and marks the spec as done
 
-### 4. Add new requirements later
+### 4. Set up architecture guidelines
+
+```bash
+# Define the tech stack, conventions, and constraints
+.agents/orchestrator.sh arch-init "React 18 + TypeScript frontend, Express backend, PostgreSQL. Use functional components, REST API, repository pattern."
+
+# Update architecture later with new guidelines
+.agents/orchestrator.sh arch-add "Add Redis caching layer for API responses"
+
+# Discuss trade-offs interactively
+.agents/orchestrator.sh arch-add-interactive
+
+# Review code compliance (generates corrective specs for deviations)
+.agents/orchestrator.sh arch-review
+```
+
+The Architect Agent creates `pm/architecture.md` with stack, directory structure, patterns, and key decisions. The Dev Agent reads this doc before implementing any spec.
+
+### 5. Add new requirements later
 
 Once the initial backlog is built, add new requirements incrementally:
 
@@ -99,7 +119,7 @@ Once the initial backlog is built, add new requirements incrementally:
 
 In interactive mode, the PM asks clarifying questions about scope, edge cases, and constraints. Once the requirement is clear, it generates the specs.
 
-### 5. Let it run unattended
+### 6. Let it run unattended
 
 ```bash
 .agents/orchestrator.sh dev-auto
@@ -107,7 +127,7 @@ In interactive mode, the PM asks clarifying questions about scope, edge cases, a
 
 This continuously resolves the next eligible spec (highest priority with all dependencies met) and implements it. Stop anytime with `Ctrl+C` or `touch .agents/.stop` from another terminal.
 
-### 6. Check progress
+### 7. Check progress
 
 ```bash
 .agents/orchestrator.sh status          # compact summary
@@ -138,6 +158,12 @@ pm-add-interactive          # Refine a requirement interactively, then generate 
 pm-answer <question-file>   # Answer a specific developer question
 pm-answer-pending           # Answer all unanswered questions
 
+# Architect commands
+arch-init <prompt|file>     # Generate initial architecture doc (pm/architecture.md)
+arch-add <prompt|file>      # Update architecture with new guidelines
+arch-add-interactive        # Discuss and update architecture interactively
+arch-review                 # Review code compliance, generate corrective specs
+
 # Dev commands
 dev-implement <SPEC-ID>     # Implement a specific spec
 dev-implement-next          # Auto-pick and implement the next eligible spec
@@ -165,6 +191,7 @@ orchestrator:
 agents:
   pm_model: opus            # model for PM Agent (sonnet, opus, haiku)
   dev_model: opus           # model for Dev Agent (sonnet, opus, haiku)
+  arch_model: opus          # model for Architect Agent (sonnet, opus, haiku)
 ```
 
 ## Project structure
@@ -174,17 +201,20 @@ agents:
   orchestrator.sh           # main entry point
   config.yaml               # project configuration
   pm.md                     # PM Agent identity
+  architect.md              # Architect Agent identity
   dev.md                    # Dev Agent identity
   logs/                     # agent invocation logs (auto-generated)
 
 .claude/commands/
   gen-spec.md               # skill: generate a spec
+  gen-arch.md               # skill: create/update architecture doc
   gen-answer.md             # skill: answer a dev question
   gen-question.md           # skill: file a question to PM
   update-status.md          # skill: transition spec status
 
 # Generated at runtime (not part of the framework):
 docs/                       # your domain documentation (input)
+pm/architecture.md          # architecture doc (generated by Architect)
 pm/specs/                   # generated specs + BACKLOG.md
 pm/questions/               # dev questions + PM answers
 pm/tasks/                   # implementation plans
@@ -199,10 +229,13 @@ src/                        # generated source code
 # 2. Generate the backlog
 .agents/orchestrator.sh -v pm-seed "Recipe management app: CRUD, search, portion scaling"
 
-# 3. Check what was generated
+# 3. Set architecture guidelines
+.agents/orchestrator.sh -v arch-init "React 18 + TypeScript, Express, PostgreSQL"
+
+# 4. Check what was generated
 .agents/orchestrator.sh -v status
 
-# 4. Let it build everything
+# 5. Let it build everything
 .agents/orchestrator.sh -v dev-auto
 
 # 5. Watch the progress — agents plan, ask questions, answer, implement

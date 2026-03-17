@@ -20,6 +20,8 @@ Implement specs from `pm/specs/` by planning, asking questions when blocked, and
 
 Read `docs/AGENT_INDEX.md` to understand available domain documentation, then consult relevant docs as needed. The spec's Context section tells you which docs are most relevant.
 
+If `pm/architecture.md` exists, read it before planning. It contains the project's architectural guidelines that your implementation must follow.
+
 ## Principles
 
 - **Never implement a spec whose dependencies are not `done`.** Check each dependency's `status` field. If any dependency is not `done`, report the blocker and stop immediately.
@@ -49,7 +51,7 @@ Execute when the spec is in `backlog` or needs replanning:
 1. Read the spec at `pm/specs/SPEC-XXX.md`.
 2. Verify that ALL dependencies have `status: done`. If any dependency is not done, report the blocker and **stop**.
 3. Transition the spec: `/update-status SPEC-XXX in_progress`
-4. Read relevant documentation from `docs/` based on the spec's Context section.
+4. Read relevant documentation from `docs/` based on the spec's Context section. Also read `pm/architecture.md` if it exists.
 5. Explore the codebase to understand patterns and conventions:
    - Use `Glob` to discover the directory structure and file layout.
    - Use `Grep` to find specific patterns, function names, or imports relevant to the spec.

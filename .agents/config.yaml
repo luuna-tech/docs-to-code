@@ -10,3 +10,4 @@ orchestrator:
 agents:
   pm_model: opus            # model for PM Agent (sonnet, opus, haiku)
   dev_model: opus           # model for Dev Agent (sonnet, opus, haiku)
+  arch_model: opus          # model for Architect Agent (sonnet, opus, haiku)
