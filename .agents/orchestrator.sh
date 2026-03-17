@@ -430,7 +430,8 @@ You are in an interactive session with a stakeholder who wants to add a new requ
 - Ask focused questions — one or two at a time, not a wall of questions.
 - Ground your understanding in the existing documentation from docs/.
 - Be aware of existing specs to avoid duplicates and set correct dependencies.
-- Do not generate specs until the user confirms the requirement is complete."
+- Do not generate specs until the user confirms the requirement is complete.
+- After generating specs, tell the user: 'Specs generated. You can describe another requirement or type /quit to exit.'"
 
   local model_flag=""
   [ -n "$PM_MODEL" ] && model_flag="--model $PM_MODEL"
