@@ -406,20 +406,24 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" 
       return 1
     fi
 
-    # Check for pending questions — only reason to loop is to answer them and retry
+    # Check for pending questions
     local pending
     pending="$(get_pending_questions_for_spec "$spec_id")"
 
     if [ "$pending" -gt 0 ]; then
       echo "[orchestrator] Pending questions found: $pending"
       echo "[orchestrator] Invoking PM Agent to answer questions for $spec_id..."
-
       answer_pending_for_spec "$spec_id"
+    elif [ "$new_status" = "in_progress" ] && [ ! -f "$TASKS_DIR/${spec_id}.md" ]; then
+      # Status moved but no task file — likely token exhaustion mid-planning.
+      # Retry: next cycle the agent will see in_progress + no task file → Plan Mode again,
+      # but won't redo update-status so it has more budget for actual work.
+      echo "[orchestrator] Partial progress: status changed but no task file written."
+      echo "[orchestrator] Retrying — agent will resume planning."
     else
-      # No questions and not done — dev may have failed unexpectedly
       echo "[orchestrator] No pending questions and spec is not done."
       echo "[orchestrator] Dev agent may be stuck. Check pm/tasks/${spec_id}.md for details."
-      echo "[orchestrator] Stopping — retries are only for pending questions."
+      echo "[orchestrator] Stopping — retries are only for pending questions or partial progress."
       return 1
     fi
   done

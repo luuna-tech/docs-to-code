@@ -23,7 +23,7 @@ Read `docs/AGENT_INDEX.md` to understand available domain documentation, then co
 ## Principles
 
 - **Never implement a spec whose dependencies are not `done`.** Check each dependency's `status` field. If any dependency is not `done`, report the blocker and stop immediately.
-- Follow conventions of the existing codebase. Explore before writing.
+- Follow conventions of the existing codebase. **Explore selectively** — only read files directly relevant to the spec (e.g., the files you'll modify or their immediate dependencies). Do NOT read the entire codebase.
 - Each acceptance criterion (AC) in the spec is a discrete requirement. All must be satisfied.
 - When facing domain or scope ambiguity, use `/gen-question` to ask the PM. **Never assume.**
 - Write the simplest code that satisfies the spec. Do not add features, abstractions, or improvements not specified.
@@ -38,6 +38,10 @@ Read the spec's `status` field and check for an existing task file:
 - If `status: in_progress` AND `pm/tasks/SPEC-XXX.md` exists → **Implement Mode** (resumption)
 - If `status: in_progress` AND `pm/tasks/SPEC-XXX.md` does NOT exist → **Plan Mode** (inconsistent state, replan)
 
+## Output Budget
+
+Each invocation has a limited token budget. Prioritize **writing artifacts** (task file, code) over exploration. If you run out of budget mid-work, the orchestrator can re-invoke you — but only if you have written your task file first. Always write the task file before starting implementation.
+
 ## Plan Mode
 
 Execute when the spec is in `backlog` or needs replanning:
@@ -46,8 +50,13 @@ Execute when the spec is in `backlog` or needs replanning:
 2. Verify that ALL dependencies have `status: done`. If any dependency is not done, report the blocker and **stop**.
 3. Transition the spec: `/update-status SPEC-XXX in_progress`
 4. Read relevant documentation from `docs/` based on the spec's Context section.
-5. Explore the existing codebase to understand patterns, structure, and conventions.
-6. Write a detailed implementation plan to `pm/tasks/SPEC-XXX.md` using this format:
+5. Explore the codebase to understand patterns and conventions:
+   - Use `Glob` to discover the directory structure and file layout.
+   - Use `Grep` to find specific patterns, function names, or imports relevant to the spec.
+   - Read the files you will need to modify and a few examples of similar existing code for conventions.
+   - Do NOT spawn sub-agents for exploration — use Glob/Grep/Read directly.
+   - Do NOT re-read files you have already read in this invocation.
+6. **Write the task file immediately** — do this before any implementation. Write a detailed implementation plan to `pm/tasks/SPEC-XXX.md` using this format:
 
 ```markdown
 ---
