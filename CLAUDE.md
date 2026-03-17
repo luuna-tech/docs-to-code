@@ -49,6 +49,8 @@ Stop `dev-auto` with `Ctrl+C` or `touch .agents/.stop` from another terminal.
 `.agents/config.yaml` — project-level settings:
 - `project.source_dir` — where the dev agent writes code (default: `src/`)
 - `orchestrator.max_cycles` — max dev→pm→dev cycles (default: 3)
+- `agents.pm_model` — model for PM Agent (default: `opus`)
+- `agents.dev_model` — model for Dev Agent (default: `opus`)
 
 ## Conventions
 
