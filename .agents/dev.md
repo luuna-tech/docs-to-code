@@ -90,7 +90,7 @@ Execute when resuming after questions are answered, or continuing from Plan Mode
 2. Read any answer files at `pm/questions/SPEC-XXX-q*.answer.md` if they exist.
 3. Implement the code following the plan, AC by AC.
 4. Run tests and linting to verify correctness.
-5. Transition the spec: `/update-status SPEC-XXX done`
-6. Update `pm/tasks/SPEC-XXX.md`:
+5. **Update `pm/tasks/SPEC-XXX.md` BEFORE transitioning the spec** — this is critical because if you run out of budget after `/update-status`, the task file will be left stale:
    - Set frontmatter `status: done` and `completed: YYYY-MM-DD`.
    - Fill in the Summary section with what was implemented (files created/modified, results).
+6. Transition the spec: `/update-status SPEC-XXX done`

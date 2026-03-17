@@ -491,6 +491,15 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" 
     echo "[orchestrator] Spec $spec_id status after dev: $new_status"
 
     if [ "$new_status" = "done" ]; then
+      # Ensure task file reflects completion (agent may skip this on token exhaustion)
+      local task_file="$TASKS_DIR/${spec_id}.md"
+      if [ -f "$task_file" ] && ! grep -q '^status: done' "$task_file"; then
+        sed -i 's/^status: .*/status: done/' "$task_file"
+        if ! grep -q '^completed:.*[0-9]' "$task_file"; then
+          sed -i "s/^completed:.*/completed: $(date '+%Y-%m-%d')/" "$task_file"
+        fi
+        echo "[orchestrator] Task file synced to done."
+      fi
       echo "[orchestrator] Spec $spec_id completed successfully."
       return 0
     fi
