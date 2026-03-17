@@ -135,7 +135,8 @@ $task"
 
 # --- Helpers ---
 
-# Read a spec's status from its frontmatter
+# Read a spec's status from its frontmatter.
+# Normalizes unknown statuses to "backlog".
 get_spec_status() {
   local spec_id="$1"
   local spec_file="$SPECS_DIR/${spec_id}.md"
@@ -145,7 +146,12 @@ get_spec_status() {
     return
   fi
 
-  grep -m1 '^status:' "$spec_file" | awk '{print $2}'
+  local raw
+  raw="$(grep -m1 '^status:' "$spec_file" | awk '{print $2}')"
+  case "$raw" in
+    backlog|in_progress|done) echo "$raw" ;;
+    *) echo "backlog" ;;
+  esac
 }
 
 # Find pending (unanswered) questions for a specific spec
@@ -216,9 +222,9 @@ show_status() {
     id="$(grep -m1 '^id:' "$spec_file" | awk '{print $2}')"
     title="$(grep -m1 '^title:' "$spec_file" | sed 's/^title:[[:space:]]*//' | tr -d '"')"
     case "$st" in
-      backlog)     s_backlog=$((s_backlog + 1)) ;;
       in_progress) s_in_progress=$((s_in_progress + 1)) ;;
       done)        s_done=$((s_done + 1)) ;;
+      *)           s_backlog=$((s_backlog + 1)); st="backlog" ;;
     esac
 
     if [ -n "$verbose_status" ]; then
@@ -524,7 +530,7 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" 
 # Prints the SPEC-ID to stdout, or "NONE" if nothing is eligible.
 resolve_next_spec() {
   local result
-  result="$(cd "$PROJECT_ROOT" && claude -p "Read pm/specs/BACKLOG.md. Find the highest-priority spec with status 'backlog' whose dependencies are ALL either empty or have status 'done' (check each dependency's status by reading its spec file in pm/specs/).
+  result="$(cd "$PROJECT_ROOT" && claude -p "Read pm/specs/BACKLOG.md. Find the highest-priority spec that is NOT 'done' and NOT 'in_progress' (any other status counts as eligible — 'backlog', 'ready', etc.), whose dependencies are ALL either empty or have status 'done' (check each dependency's status by reading its spec file in pm/specs/).
 
 Priority order: critical > high > medium > low. For specs with equal priority, prefer the one listed first (lower SPEC number).
 

@@ -45,6 +45,7 @@ As a [actor], I want [action] so that [benefit].
 ## Rules
 
 - Determine the next available SPEC ID by listing files in `pm/specs/`.
+- The `status` field MUST always be exactly `backlog` for new specs. No other value (`ready`, `new`, `pending`, etc.) is valid. The only valid statuses in this system are: `backlog`, `in_progress`, `done`.
 - Each acceptance criterion must be specific and testable — no vague language like "should work well".
 - Prioritize using: `critical > high > medium > low`.
 - After creating specs, ALWAYS update `pm/specs/BACKLOG.md`. Add a row for each new spec to the summary table. If the file doesn't exist, create it. The table format is:
