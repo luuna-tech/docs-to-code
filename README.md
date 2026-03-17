@@ -85,7 +85,21 @@ The Dev Agent will:
 5. The orchestrator invokes PM to answer, then re-invokes dev
 6. Dev implements the code and marks the spec as done
 
-### 4. Let it run unattended
+### 4. Add new requirements later
+
+Once the initial backlog is built, add new requirements incrementally:
+
+```bash
+# Non-interactive: describe the requirement, PM generates spec(s)
+.agents/orchestrator.sh pm-add "Add a navigation bar with links to home and create recipe"
+
+# Interactive: have a conversation with the PM to refine the requirement
+.agents/orchestrator.sh pm-add-interactive
+```
+
+In interactive mode, the PM asks clarifying questions about scope, edge cases, and constraints. Once the requirement is clear, it generates the specs.
+
+### 5. Let it run unattended
 
 ```bash
 .agents/orchestrator.sh dev-auto
@@ -93,7 +107,7 @@ The Dev Agent will:
 
 This continuously resolves the next eligible spec (highest priority with all dependencies met) and implements it. Stop anytime with `Ctrl+C` or `touch .agents/.stop` from another terminal.
 
-### 5. Check progress
+### 6. Check progress
 
 ```bash
 .agents/orchestrator.sh status          # compact summary
@@ -119,6 +133,8 @@ orchestrator.sh [-v] [--max-cycles N] <command> [options]
 
 # PM commands
 pm-seed <prompt|file>       # Generate initial backlog from project description
+pm-add <prompt|file>        # Add new spec(s) for a requirement to existing backlog
+pm-add-interactive          # Refine a requirement interactively, then generate specs
 pm-answer <question-file>   # Answer a specific developer question
 pm-answer-pending           # Answer all unanswered questions
 

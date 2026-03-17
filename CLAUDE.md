@@ -36,6 +36,8 @@ orchestrator.sh
 
 ```bash
 orchestrator.sh pm-seed <prompt>           # Generate initial backlog
+orchestrator.sh pm-add <prompt>            # Add spec(s) for a new requirement
+orchestrator.sh pm-add-interactive         # Refine a requirement interactively with PM
 orchestrator.sh pm-answer-pending          # Answer all pending questions
 orchestrator.sh dev-implement SPEC-XXX     # Implement a spec (dev→pm→dev loop)
 orchestrator.sh dev-implement-next         # Auto-pick and implement next eligible spec
@@ -43,6 +45,10 @@ orchestrator.sh dev-auto                   # Unattended: implement all eligible 
 ```
 
 Stop `dev-auto` with `Ctrl+C` or `touch .agents/.stop` from another terminal.
+
+## Maintenance
+
+After any change to commands, configuration, or architecture, check if `README.md` and `CLAUDE.md` need updating.
 
 ## Configuration
 
