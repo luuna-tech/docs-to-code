@@ -51,6 +51,11 @@ Commands:
 
   pm-answer-pending          Find and answer all unanswered questions in pm/questions/.
 
+  pm-add <prompt|file>       Add new spec(s) for a requirement to the existing backlog.
+
+  pm-add-interactive         Start a conversation with the PM to refine a requirement
+                             and generate spec(s) interactively.
+
   dev-implement <SPEC-ID>    Implement a spec (plan→ask→answer→implement loop).
 
   dev-implement-next         Find and implement the next eligible spec from the backlog.
@@ -68,6 +73,8 @@ Examples:
   $(basename "$0") dev-implement SPEC-001
   $(basename "$0") -v --max-cycles 5 dev-implement SPEC-002
   $(basename "$0") dev-implement-next
+  $(basename "$0") pm-add "Add user authentication with email/password"
+  $(basename "$0") pm-add-interactive
   $(basename "$0") -v dev-auto
 
 EOF
@@ -355,6 +362,76 @@ cmd_pm_answer_pending() {
   fi
 }
 
+cmd_pm_add() {
+  local input="$1"
+  local prompt
+
+  if [ -f "$input" ]; then
+    prompt="$(cat "$input")"
+    echo "[orchestrator] Reading requirement from file: $input"
+  else
+    prompt="$input"
+  fi
+
+  echo "[orchestrator] Invoking PM Agent — mode: add requirement"
+  echo "[orchestrator] Working directory: $PROJECT_ROOT"
+  echo "---"
+
+  invoke_agent "pm.md" "A new requirement has been requested for the project. Your job is to analyze it and create the spec(s) needed to implement it.
+
+## Process
+
+1. Read the existing backlog at pm/specs/BACKLOG.md to understand what is already built or planned.
+2. Read docs/AGENT_INDEX.md and relevant documentation.
+3. Analyze the new requirement below and determine what spec(s) are needed.
+4. Check for overlap with existing specs — do not duplicate work that is already covered.
+5. Create new spec(s) using /gen-spec. Set correct dependencies on existing specs.
+6. Update pm/specs/BACKLOG.md with the new entries.
+
+## New Requirement
+
+$prompt" "" "add" "$PM_MODEL"
+}
+
+cmd_pm_add_interactive() {
+  echo "[orchestrator] Starting interactive PM session..."
+  echo "[orchestrator] Describe your requirement. The PM will ask clarifying questions."
+  echo "[orchestrator] When the requirement is clear, the PM will generate specs."
+  echo "[orchestrator] Type 'exit' or Ctrl+C to end the session."
+  echo "---"
+
+  local identity
+  identity="$(awk 'NR==1 && /^---$/{fm=1; next} fm && /^---$/{fm=0; next} !fm{print}' "$SCRIPT_DIR/pm.md")"
+
+  local system_prompt="$identity
+
+---
+
+# Mode: Interactive Requirement Refinement
+
+You are in an interactive session with a stakeholder who wants to add a new requirement to the project.
+
+## Your process
+
+1. At the START of the conversation, read pm/specs/BACKLOG.md and docs/AGENT_INDEX.md to understand the current state of the project. Do this silently — do not dump the contents to the user.
+2. Listen to the user's requirement.
+3. Ask clarifying questions to fill in gaps: scope, edge cases, constraints, what is in/out of scope.
+4. When the requirement is fully understood, summarize it back to the user for confirmation.
+5. Once confirmed, generate the spec(s) using /gen-spec and update pm/specs/BACKLOG.md.
+
+## Rules
+
+- Ask focused questions — one or two at a time, not a wall of questions.
+- Ground your understanding in the existing documentation from docs/.
+- Be aware of existing specs to avoid duplicates and set correct dependencies.
+- Do not generate specs until the user confirms the requirement is complete."
+
+  local model_flag=""
+  [ -n "$PM_MODEL" ] && model_flag="--model $PM_MODEL"
+
+  (cd "$PROJECT_ROOT" && claude --append-system-prompt "$system_prompt" --allowedTools "$AGENT_TOOLS" $model_flag)
+}
+
 cmd_dev_implement() {
   local spec_id="$1"
   local spec_file="$SPECS_DIR/${spec_id}.md"
@@ -601,6 +678,13 @@ case "$command" in
     ;;
   pm-answer-pending)
     cmd_pm_answer_pending
+    ;;
+  pm-add)
+    [ $# -lt 1 ] && { echo "Error: pm-add requires a prompt or file path"; usage; }
+    cmd_pm_add "$1"
+    ;;
+  pm-add-interactive)
+    cmd_pm_add_interactive
     ;;
   dev-implement)
     [ $# -lt 1 ] && { echo "Error: dev-implement requires a SPEC-ID"; usage; }
