@@ -18,6 +18,8 @@ VERBOSE=""
 
 MAX_CYCLES=3
 SOURCE_DIR="src/"
+PM_MODEL=""
+DEV_MODEL=""
 
 if [ -f "$CONFIG_FILE" ]; then
   _cfg_val() { grep -m1 "^[[:space:]]*$1:" "$CONFIG_FILE" | sed "s/^[^:]*:[[:space:]]*//" | sed 's/[[:space:]]*#.*//'; }
@@ -25,7 +27,11 @@ if [ -f "$CONFIG_FILE" ]; then
   [ -n "$_max" ] && MAX_CYCLES="$_max"
   _src="$(_cfg_val source_dir)"
   [ -n "$_src" ] && SOURCE_DIR="$_src"
-  unset _cfg_val _max _src
+  _pm="$(_cfg_val pm_model)"
+  [ -n "$_pm" ] && PM_MODEL="$_pm"
+  _dev="$(_cfg_val dev_model)"
+  [ -n "$_dev" ] && DEV_MODEL="$_dev"
+  unset _cfg_val _max _src _pm _dev
 fi
 
 usage() {
@@ -69,12 +75,13 @@ EOF
 }
 
 # Invoke an agent with a prompt. Reads the agent identity file and appends the task.
-# Args: <agent_file> <task> [tools_override] [log_label]
+# Args: <agent_file> <task> [tools_override] [log_label] [model]
 invoke_agent() {
   local agent_file="$1"
   local task="$2"
   local tools="${3:-$AGENT_TOOLS}"
   local log_label="${4:-}"
+  local model="${5:-}"
 
   local identity
   identity="$(awk 'NR==1 && /^---$/{fm=1; next} fm && /^---$/{fm=0; next} !fm{print}' "$SCRIPT_DIR/$agent_file")"
@@ -94,11 +101,15 @@ $task"
   timestamp="$(date '+%Y-%m-%d_%H-%M-%S')"
   local log_file="$LOGS_DIR/${timestamp}_${agent_name}${log_label:+_${log_label}}.log"
 
+  local model_flag=""
+  [ -n "$model" ] && model_flag="--model $model"
+
   echo "[orchestrator] Log: $log_file"
+  [ -n "$model" ] && echo "[orchestrator] Model: $model"
 
   if [ -n "$VERBOSE" ]; then
     # Stream-json mode: log raw JSON, display filtered human-readable output
-    (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools" --output-format stream-json --verbose) | \
+    (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools" $model_flag --output-format stream-json --verbose) | \
       stdbuf -oL tee "$log_file" | \
       jq --unbuffered -r '
         if .type == "assistant" then
@@ -111,7 +122,7 @@ $task"
         else empty end
       '
   else
-    (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools") | tee "$log_file"
+    (cd "$PROJECT_ROOT" && claude -p "$full_prompt" --allowedTools "$tools" $model_flag) | tee "$log_file"
   fi
 }
 
@@ -291,7 +302,7 @@ Use /gen-spec to create each spec. After creating all specs, ensure pm/specs/BAC
 
 ## Project Description
 
-$prompt" "" "seed"
+$prompt" "" "seed" "$PM_MODEL"
 }
 
 cmd_pm_answer() {
@@ -317,7 +328,7 @@ cmd_pm_answer() {
 
   invoke_agent "pm.md" "Answer the developer question in: $question_file
 
-Use /gen-answer to write the answer. If you discover gaps in the backlog, use /gen-spec to create new specs." "" "answer_$(basename "$question_file" .md)"
+Use /gen-answer to write the answer. If you discover gaps in the backlog, use /gen-spec to create new specs." "" "answer_$(basename "$question_file" .md)" "$PM_MODEL"
 }
 
 cmd_pm_answer_pending() {
@@ -386,7 +397,7 @@ Read pm/specs/${spec_id}.md and follow your mode of operation (Plan or Implement
 
 If you have questions, use /gen-question to file them and then stop.
 If all dependencies are met and you can proceed, implement the spec completely.
-Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" "${spec_id}_cycle${cycle}"
+Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" "${spec_id}_cycle${cycle}" "$DEV_MODEL"
 
     echo ""
 

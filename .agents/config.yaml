@@ -6,3 +6,7 @@ project:
 
 orchestrator:
   max_cycles: 3             # dev→pm→dev cycles before requiring human intervention
+
+agents:
+  pm_model: opus            # model for PM Agent (sonnet, opus, haiku)
+  dev_model: opus           # model for Dev Agent (sonnet, opus, haiku)
