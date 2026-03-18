@@ -1,0 +1,113 @@
+# Agent Orchestration Framework — Internals
+
+This document describes the inner workings of the agent framework in `.agents/` and `.claude/commands/`. It is reference material for anyone modifying the framework itself. **You do not need to read this to use the framework** — see CLAUDE.md and README.md for project-level instructions.
+
+## Architecture
+
+```
+orchestrator.sh
+├── PM Agent (pm.md)          — generates specs, answers questions
+│   ├── /gen-spec             — create spec files
+│   ├── /gen-answer           — answer dev questions
+│   └── /gen-question         — (used by dev, answered by PM)
+├── Architect Agent (architect.md) — establishes and enforces architecture
+│   ├── /gen-arch             — create/update pm/architecture.md
+│   └── /gen-spec             — create corrective specs
+├── Dev Agent (dev.md)        — plans, implements specs, creates PRs
+│   ├── /gen-question         — ask PM when blocked
+│   └── /update-status        — transition spec status + sync BACKLOG.md
+└── Reviewer Agent (reviewer.md) — reviews PRs via GitHub
+    └── /update-status        — transition spec status after review
+```
+
+## Spec lifecycle
+
+`backlog → in_progress → in_review → done`
+
+Review modes (`orchestrator.review_mode` in config):
+- `agent` — Reviewer Agent reviews and merges automatically
+- `human` — Orchestrator creates PR, human reviews on GitHub
+- `hybrid` — Reviewer Agent reviews, human merges
+
+## Configuration
+
+`.agents/config.yaml` — project-level settings:
+- `project.source_dir` — where the dev agent writes code (default: `src/`)
+- `orchestrator.max_cycles` — max dev→pm→dev cycles (default: 3)
+- `orchestrator.base_branch` — base branch for spec branches / PR target (default: `main`)
+- `orchestrator.review_mode` — PR review workflow: `agent`, `human`, or `hybrid` (default: `agent`)
+- `agents.pm_model` — model for PM Agent (default: `opus`)
+- `agents.dev_model` — model for Dev Agent (default: `opus`)
+- `agents.arch_model` — model for Architect Agent (default: `opus`)
+- `agents.reviewer_model` — model for Reviewer Agent (default: `opus`)
+
+## Conventions
+
+- Agent identity files use YAML frontmatter + markdown body (same pattern as specs)
+- Skills are Claude Code slash commands in `.claude/commands/`
+- The orchestrator invokes agents via `claude -p` with scoped `--allowedTools`
+- All agents have web access (WebSearch, WebFetch) for research
+- PM and Architect agents have no Bash access (read/write only)
+- Dev and Reviewer agents have Bash for tests, builds, and `gh` CLI
+
+## Key commands
+
+```bash
+# PM
+orchestrator.sh pm-seed <prompt>           # Generate initial backlog
+orchestrator.sh pm-add <prompt>            # Add spec(s) for a new requirement
+orchestrator.sh pm-add-interactive         # Refine a requirement interactively with PM
+orchestrator.sh pm-answer-pending          # Answer all pending questions
+
+# Architect
+orchestrator.sh arch-init <prompt>         # Generate initial architecture doc
+orchestrator.sh arch-add <prompt>          # Update architecture with new guidelines
+orchestrator.sh arch-add-interactive       # Discuss and update architecture interactively
+orchestrator.sh arch-review                # Review code compliance with architecture
+
+# Dev
+orchestrator.sh dev-implement SPEC-XXX     # Implement a spec (dev→pm→dev→review loop)
+orchestrator.sh dev-implement-next         # Auto-pick and implement next eligible spec
+orchestrator.sh dev-address SPEC-XXX       # Address review comments on a spec's PR
+orchestrator.sh dev-auto                   # Unattended: implement all eligible specs continuously
+
+# Review
+orchestrator.sh review-pending             # Review all specs in 'in_review' status
+
+# Status
+orchestrator.sh status                     # Show backlog summary
+```
+
+Stop `dev-auto` with `Ctrl+C` or `touch .agents/.stop` from another terminal.
+
+## Maintenance
+
+After any change to commands, configuration, or agent identities, check if `CLAUDE.md`, `README.md`, and this file need updating.
+
+## Project structure
+
+```
+.agents/
+  orchestrator.sh           # main entry point
+  config.yaml               # project configuration
+  pm.md                     # PM Agent identity
+  architect.md              # Architect Agent identity
+  dev.md                    # Dev Agent identity
+  reviewer.md               # Reviewer Agent identity
+  FRAMEWORK.md              # this file — framework internals
+  logs/                     # agent invocation logs (auto-generated)
+
+.claude/commands/
+  gen-spec.md               # skill: generate a spec
+  gen-arch.md               # skill: create/update architecture doc
+  gen-answer.md             # skill: answer a dev question
+  gen-question.md           # skill: file a question to PM
+  update-status.md          # skill: transition spec status
+
+docs/                       # domain documentation (input for agents)
+pm/architecture.md          # architecture doc (generated by Architect)
+pm/specs/                   # specs + BACKLOG.md
+pm/questions/               # dev questions + PM answers
+pm/tasks/                   # implementation plans
+src/                        # source code (default, configurable)
+```
