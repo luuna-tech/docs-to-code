@@ -7,30 +7,32 @@ A multi-agent orchestration framework built on [Claude Code](https://docs.anthro
 ```
                           orchestrator.sh
                                |
-              +----------------+----------------+
-              |                |                |
-         PM Agent      Architect Agent     Dev Agent
-    (product manager)   (architect)       (developer)
-              |                |                |
-    - reads docs/       - reads docs/     - reads specs
-    - generates specs   - defines stack   - reads architecture
-    - answers questions - sets conventions - plans implementation
-    - detects gaps      - reviews code    - asks PM when blocked
-                        - corrective specs - writes code
+         +------------+--------+--------+-------------+
+         |            |                 |             |
+    PM Agent    Architect Agent    Dev Agent    Reviewer Agent
+   (product mgr)  (architect)    (developer)    (code review)
+         |            |                 |             |
+   - reads docs/  - reads docs/   - reads specs  - reads PR diff
+   - gen specs    - defines stack  - reads arch   - checks ACs
+   - answers Qs   - sets conventions - plans impl - checks security
+   - detects gaps - reviews code   - creates PRs  - inline comments
+                  - corrective specs - writes code - approves/rejects
 ```
 
-The orchestrator coordinates three specialized agents:
+The orchestrator coordinates four specialized agents:
 
 1. **PM Agent** reads your domain documentation (`docs/`), decomposes the project into specs, and answers implementation questions grounded in the docs.
 2. **Architect Agent** establishes technical direction in `pm/architecture.md` — stack, structure, conventions, patterns. Reviews code for compliance and generates corrective specs when the codebase deviates.
-3. **Dev Agent** picks specs from the backlog, reads the architecture guidelines, plans the implementation, asks the PM when something is ambiguous, and writes the code.
+3. **Dev Agent** picks specs from the backlog, reads the architecture guidelines, plans the implementation, asks the PM when something is ambiguous, writes the code, and creates PRs.
+4. **Reviewer Agent** reviews PRs against acceptance criteria, architecture guidelines, security, and performance. Submits inline comments on GitHub and approves or requests changes.
 
-Communication between agents happens through files — specs, questions, answers, and task plans — all in markdown with YAML frontmatter. The orchestrator manages the loop: invoke dev, check if there are questions, invoke PM to answer, re-invoke dev to continue.
+Communication between agents happens through files and GitHub PRs — specs, questions, answers, task plans (files), and code reviews (GitHub). The orchestrator manages the loop: invoke dev, check if there are questions, invoke PM to answer, re-invoke dev, then invoke reviewer to review the PR.
 
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated
 - `jq` (for verbose streaming output)
+- `gh` (GitHub CLI, for PR-based review workflow)
 - `bash` 4+
 
 ## Quick start
@@ -81,11 +83,13 @@ The PM Agent reads your docs and generates individual specs in `pm/specs/`, each
 
 The Dev Agent will:
 1. Read the spec and verify dependencies are done
-2. Explore the codebase, plan the implementation
+2. Create a branch `spec/SPEC-001`, explore the codebase, plan the implementation
 3. Write a task file in `pm/tasks/SPEC-001.md`
 4. If blocked by ambiguity, file questions in `pm/questions/`
 5. The orchestrator invokes PM to answer, then re-invokes dev
-6. Dev implements the code and marks the spec as done
+6. Dev implements the code, creates a PR, and the Reviewer Agent reviews it
+7. If changes are requested, dev addresses them and the reviewer re-reviews
+8. Once approved, the PR is merged and the spec is marked as done
 
 ### 4. Set up architecture guidelines
 
@@ -135,7 +139,7 @@ This continuously resolves the next eligible spec (highest priority with all dep
 ```
 
 ```
-[status] Specs:     11 total | 10 done | 1 in progress | 0 backlog
+[status] Specs:     11 total | 10 done | 0 in review | 1 in progress | 0 backlog
   [x ] SPEC-001 — Project Scaffolding & Dev Environment (done)
   [x ] SPEC-002 — Database Schema & Migrations (done)
   [x ] SPEC-003 — Recipe CRUD API (done)
@@ -165,9 +169,13 @@ arch-add-interactive        # Discuss and update architecture interactively
 arch-review                 # Review code compliance, generate corrective specs
 
 # Dev commands
-dev-implement <SPEC-ID>     # Implement a specific spec
+dev-implement <SPEC-ID>     # Implement a specific spec (with PR review)
 dev-implement-next          # Auto-pick and implement the next eligible spec
+dev-address <SPEC-ID>       # Address review comments on a spec's PR
 dev-auto                    # Unattended: implement all eligible specs continuously
+
+# Review commands
+review-pending              # Review all specs in 'in_review' status
 
 # Status
 status                      # Show backlog summary
@@ -187,12 +195,25 @@ project:
 
 orchestrator:
   max_cycles: 3             # dev-pm-dev cycles before requiring human intervention
+  base_branch: main         # base branch for spec branches (PR target)
+  review_mode: agent        # agent | human | hybrid
 
 agents:
   pm_model: opus            # model for PM Agent (sonnet, opus, haiku)
   dev_model: opus           # model for Dev Agent (sonnet, opus, haiku)
   arch_model: opus          # model for Architect Agent (sonnet, opus, haiku)
+  reviewer_model: opus      # model for Reviewer Agent (sonnet, opus, haiku)
 ```
+
+### Review modes
+
+| Mode | Behavior |
+|------|----------|
+| `agent` | Reviewer Agent reviews the PR and merges automatically if approved |
+| `human` | Dev creates PR, orchestrator prints URL. Human reviews on GitHub |
+| `hybrid` | Reviewer Agent reviews, human merges. Best of both worlds |
+
+In `human` and `hybrid` modes, use `dev-address SPEC-XXX` after reviewing to continue the workflow. It detects merged PRs and marks specs as done.
 
 ## Project structure
 
@@ -203,6 +224,7 @@ agents:
   pm.md                     # PM Agent identity
   architect.md              # Architect Agent identity
   dev.md                    # Dev Agent identity
+  reviewer.md               # Reviewer Agent identity
   logs/                     # agent invocation logs (auto-generated)
 
 .claude/commands/
@@ -242,37 +264,43 @@ src/                        # generated source code
 #    Stop anytime with Ctrl+C or: touch .agents/.stop
 ```
 
-## How the dev-pm loop works
+## How the dev-pm-review loop works
 
 ```
-orchestrator                  dev agent                 pm agent
-     |                            |                         |
-     |--- invoke dev (SPEC-002) ->|                         |
-     |                            |-- read spec             |
-     |                            |-- check deps (done?)    |
-     |                            |-- explore codebase      |
-     |                            |-- write task plan       |
-     |                            |-- ambiguity found!      |
-     |                            |-- /gen-question ------->| (writes question file)
-     |                            |-- stop                  |
-     |<---------------------------|                         |
-     |                                                      |
-     |-- pending questions found                            |
-     |--- invoke pm ---------------------------------------->|
-     |                                                      |-- read question
-     |                                                      |-- research docs
-     |                                                      |-- /gen-answer (writes answer file)
-     |<-----------------------------------------------------|
-     |                                                      |
-     |--- invoke dev (SPEC-002) ->|                         |
-     |                            |-- read task plan        |
-     |                            |-- read answer           |
-     |                            |-- implement code        |
-     |                            |-- run tests             |
-     |                            |-- /update-status done   |
-     |<---------------------------|                         |
-     |                                                      |
-     | done!                                                |
+orchestrator              dev agent              pm agent           reviewer agent
+     |                        |                      |                    |
+     |--- invoke dev -------->|                      |                    |
+     |                        |-- read spec          |                    |
+     |                        |-- check deps         |                    |
+     |                        |-- create branch      |                    |
+     |                        |-- explore codebase   |                    |
+     |                        |-- write task plan    |                    |
+     |                        |-- /gen-question ----->| (question file)   |
+     |                        |-- stop               |                    |
+     |<-----------------------|                      |                    |
+     |                                               |                    |
+     |-- pending questions found                     |                    |
+     |--- invoke pm -------------------------------->|                    |
+     |                                               |-- research docs    |
+     |                                               |-- /gen-answer      |
+     |<----------------------------------------------|                    |
+     |                                                                    |
+     |--- invoke dev -------->|                                           |
+     |                        |-- implement code                          |
+     |                        |-- run tests                               |
+     |                        |-- git push + PR                           |
+     |                        |-- /update-status in_review                |
+     |<-----------------------|                                           |
+     |                                                                    |
+     |--- invoke reviewer ------------------------------------------->|
+     |                                                                |
+     |                                          review PR diff -------|
+     |                                          check ACs ------------|
+     |                                          inline comments ------|
+     |                                          approve/request ------|
+     |<---------------------------------------------------------------|
+     |                                                                    |
+     | done! (or dev addresses changes and reviewer re-reviews)           |
 ```
 
 ## Debugging

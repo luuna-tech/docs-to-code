@@ -18,9 +18,12 @@ VERBOSE=""
 
 MAX_CYCLES=3
 SOURCE_DIR="src/"
+BASE_BRANCH="main"
+REVIEW_MODE="agent"
 PM_MODEL=""
 DEV_MODEL=""
 ARCH_MODEL=""
+REVIEWER_MODEL=""
 
 if [ -f "$CONFIG_FILE" ]; then
   _cfg_val() { grep -m1 "^[[:space:]]*$1:" "$CONFIG_FILE" | sed "s/^[^:]*:[[:space:]]*//" | sed 's/[[:space:]]*#.*//'; }
@@ -28,13 +31,19 @@ if [ -f "$CONFIG_FILE" ]; then
   [ -n "$_max" ] && MAX_CYCLES="$_max"
   _src="$(_cfg_val source_dir)"
   [ -n "$_src" ] && SOURCE_DIR="$_src"
+  _base="$(_cfg_val base_branch)"
+  [ -n "$_base" ] && BASE_BRANCH="$_base"
+  _review="$(_cfg_val review_mode)"
+  [ -n "$_review" ] && REVIEW_MODE="$_review"
   _pm="$(_cfg_val pm_model)"
   [ -n "$_pm" ] && PM_MODEL="$_pm"
   _dev="$(_cfg_val dev_model)"
   [ -n "$_dev" ] && DEV_MODEL="$_dev"
   _arch="$(_cfg_val arch_model)"
   [ -n "$_arch" ] && ARCH_MODEL="$_arch"
-  unset _cfg_val _max _src _pm _dev _arch
+  _reviewer="$(_cfg_val reviewer_model)"
+  [ -n "$_reviewer" ] && REVIEWER_MODEL="$_reviewer"
+  unset _cfg_val _max _src _base _review _pm _dev _arch _reviewer
 fi
 
 usage() {
@@ -59,12 +68,20 @@ Commands:
   pm-add-interactive         Start a conversation with the PM to refine a requirement
                              and generate spec(s) interactively.
 
-  dev-implement <SPEC-ID>    Implement a spec (plan→ask→answer→implement loop).
+  dev-implement <SPEC-ID>    Implement a spec (plan→ask→answer→implement→review loop).
 
   dev-implement-next         Find and implement the next eligible spec from the backlog.
 
+  dev-address <SPEC-ID>      Address review comments on a spec's PR (human/hybrid mode).
+                             Also detects merged PRs and marks specs as done.
+
   dev-auto                   Unattended mode: continuously pick and implement specs.
                              Stop with Ctrl+C or 'touch .agents/.stop' from another terminal.
+                             In human/hybrid mode, stops after PR creation (cannot wait for human).
+
+  review-pending             Review all specs currently in 'in_review' status.
+                             In agent/hybrid mode, invokes the Reviewer Agent.
+                             In human mode, prints PR URLs.
 
   arch-init <prompt|file>    Generate initial architecture doc (pm/architecture.md).
                              Pass tech stack, conventions, and constraints.
@@ -95,6 +112,8 @@ Examples:
   $(basename "$0") arch-add-interactive
   $(basename "$0") arch-review
   $(basename "$0") -v dev-auto
+  $(basename "$0") dev-address SPEC-003
+  $(basename "$0") review-pending
 
 EOF
   exit 1
@@ -168,7 +187,7 @@ get_spec_status() {
   local raw
   raw="$(grep -m1 '^status:' "$spec_file" | awk '{print $2}')"
   case "$raw" in
-    backlog|in_progress|done) echo "$raw" ;;
+    backlog|in_progress|in_review|done) echo "$raw" ;;
     *) echo "backlog" ;;
   esac
 }
@@ -225,7 +244,7 @@ show_status() {
   local verbose_status=""
   [ "${1:-}" = "--verbose" ] && verbose_status=1
 
-  local total=0 s_backlog=0 s_in_progress=0 s_done=0
+  local total=0 s_backlog=0 s_in_progress=0 s_in_review=0 s_done=0
   local q_total=0 q_answered=0 q_pending=0
   local t_total=0 t_planning=0 t_implementing=0 t_done=0 t_blocked=0
 
@@ -242,6 +261,7 @@ show_status() {
     title="$(grep -m1 '^title:' "$spec_file" | sed 's/^title:[[:space:]]*//' | tr -d '"')"
     case "$st" in
       in_progress) s_in_progress=$((s_in_progress + 1)) ;;
+      in_review)   s_in_review=$((s_in_review + 1)) ;;
       done)        s_done=$((s_done + 1)) ;;
       *)           s_backlog=$((s_backlog + 1)); st="backlog" ;;
     esac
@@ -250,6 +270,7 @@ show_status() {
       local marker="  "
       case "$st" in
         done)        marker="x " ;;
+        in_review)   marker="R " ;;
         in_progress) marker="> " ;;
         backlog)     marker="  " ;;
       esac
@@ -290,7 +311,7 @@ show_status() {
   done
 
   # --- Display ---
-  echo "[status] Specs:     $total total | $s_done done | $s_in_progress in progress | $s_backlog backlog"
+  echo "[status] Specs:     $total total | $s_done done | $s_in_review in review | $s_in_progress in progress | $s_backlog backlog"
   if [ -n "$verbose_status" ] && [ -n "$spec_lines" ]; then
     echo -e "$spec_lines" | head -n -1
   fi
@@ -309,6 +330,108 @@ show_status() {
     bar="$(printf '%0.s#' $(seq 1 $filled 2>/dev/null))$(printf '%0.s-' $(seq 1 $empty 2>/dev/null))"
     echo "[status] Progress:  [${bar}] ${pct}%"
   fi
+}
+
+# Check if a PR exists for a spec branch.
+# Returns: "open", "merged", or "none"
+get_pr_state() {
+  local spec_id="$1"
+  local open_count
+  open_count="$(cd "$PROJECT_ROOT" && gh pr list --head "spec/$spec_id" --state open --json number -q 'length' 2>/dev/null || echo 0)"
+  if [ "$open_count" -gt 0 ]; then
+    echo "open"
+    return
+  fi
+  local merged_count
+  merged_count="$(cd "$PROJECT_ROOT" && gh pr list --head "spec/$spec_id" --state merged --json number -q 'length' 2>/dev/null || echo 0)"
+  if [ "$merged_count" -gt 0 ]; then
+    echo "merged"
+    return
+  fi
+  echo "none"
+}
+
+# Get the review decision for an open PR.
+# Returns: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or ""
+get_pr_review_decision() {
+  local spec_id="$1"
+  cd "$PROJECT_ROOT" && gh pr view "spec/$spec_id" --json reviewDecision -q '.reviewDecision' 2>/dev/null || echo ""
+}
+
+# Get the PR number for an open PR on a spec branch.
+# Returns the number, or "" if none.
+get_pr_number() {
+  local spec_id="$1"
+  cd "$PROJECT_ROOT" && gh pr list --head "spec/$spec_id" --state open --json number -q '.[0].number' 2>/dev/null || echo ""
+}
+
+# Get the PR URL for an open PR on a spec branch.
+get_pr_url() {
+  local spec_id="$1"
+  cd "$PROJECT_ROOT" && gh pr list --head "spec/$spec_id" --state open --json url -q '.[0].url' 2>/dev/null || echo ""
+}
+
+# Invoke the review cycle for a spec that is in_review.
+# Returns: 0 if review completed (done or approved for human merge), 1 to continue cycling.
+review_cycle() {
+  local spec_id="$1"
+
+  if [ "$REVIEW_MODE" = "human" ]; then
+    local pr_url
+    pr_url="$(get_pr_url "$spec_id")"
+    echo "[orchestrator] PR ready for human review: $pr_url"
+    echo "[orchestrator] After reviewing, run: orchestrator.sh dev-address $spec_id"
+    return 0
+  fi
+
+  # agent or hybrid mode — invoke reviewer
+  echo "[orchestrator] Invoking Reviewer Agent for $spec_id (mode: $REVIEW_MODE)"
+  echo "---"
+
+  invoke_agent "reviewer.md" "Review the PR for spec $spec_id.
+
+Read pm/specs/${spec_id}.md for acceptance criteria.
+Read pm/architecture.md if it exists for architectural guidelines.
+Get the open PR with: gh pr list --head \"spec/$spec_id\" --state open --json number,url -q '.[0]'
+Read the PR diff with: gh pr diff <number>
+Read full source files for context.
+
+**Review mode:** $REVIEW_MODE
+**Source directory:** \`$SOURCE_DIR\`
+
+Follow your review process: gather context, review against all dimensions, submit review via gh api, and take the appropriate action based on review mode and findings.
+
+Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" "${spec_id}_review" "$REVIEWER_MODEL"
+
+  echo ""
+
+  # Check what the reviewer did
+  local review_status
+  review_status="$(get_spec_status "$spec_id")"
+  echo "[orchestrator] Spec $spec_id status after review: $review_status"
+
+  if [ "$review_status" = "done" ]; then
+    echo "[orchestrator] Spec $spec_id merged and completed by reviewer."
+    return 0
+  fi
+
+  if [ "$review_status" = "in_review" ]; then
+    # hybrid mode: reviewer approved but didn't merge
+    local pr_url
+    pr_url="$(get_pr_url "$spec_id")"
+    echo "[orchestrator] PR approved, awaiting human merge: $pr_url"
+    echo "[orchestrator] After merging, run: orchestrator.sh dev-address $spec_id"
+    return 0
+  fi
+
+  if [ "$review_status" = "in_progress" ]; then
+    # Reviewer requested changes — signal to continue cycling
+    echo "[orchestrator] Reviewer requested changes. Will re-invoke dev in address mode."
+    return 1
+  fi
+
+  echo "[orchestrator] Unexpected status after review: $review_status"
+  return 1
 }
 
 # --- Commands ---
@@ -620,10 +743,43 @@ cmd_dev_implement() {
       return 0
     fi
 
-    # Determine mode for logging
+    # If in_review, enter the review cycle
+    if [ "$status" = "in_review" ]; then
+      local review_result=0
+      review_cycle "$spec_id" || review_result=$?
+      if [ "$review_result" -eq 0 ]; then
+        # Review completed (done, or awaiting human merge/review)
+        local final_status
+        final_status="$(get_spec_status "$spec_id")"
+        if [ "$final_status" = "done" ]; then
+          echo "[orchestrator] Spec $spec_id completed successfully."
+        fi
+        return 0
+      fi
+      # review_result=1 means changes requested, continue cycling (dev will address)
+      continue
+    fi
+
+    # Determine mode hint for the dev agent
+    local mode_hint="implement"
     local mode="plan"
-    if [ "$status" = "in_progress" ] && [ -f "$TASKS_DIR/${spec_id}.md" ]; then
-      mode="implement"
+    if [ "$status" = "backlog" ]; then
+      mode="plan"
+      mode_hint="implement"
+    elif [ "$status" = "in_progress" ] && [ ! -f "$TASKS_DIR/${spec_id}.md" ]; then
+      mode="plan"
+      mode_hint="implement"
+    elif [ "$status" = "in_progress" ] && [ -f "$TASKS_DIR/${spec_id}.md" ]; then
+      # Check if there's an open PR with changes requested → address mode
+      local pr_state
+      pr_state="$(get_pr_state "$spec_id")"
+      if [ "$pr_state" = "open" ]; then
+        mode="address"
+        mode_hint="address_review"
+      else
+        mode="implement"
+        mode_hint="implement"
+      fi
     fi
 
     echo "[orchestrator] Invoking Dev Agent — mode: $mode — cycle $cycle/$MAX_CYCLES"
@@ -631,9 +787,12 @@ cmd_dev_implement() {
 
     invoke_agent "dev.md" "Implement spec $spec_id.
 
-Read pm/specs/${spec_id}.md and follow your mode of operation (Plan or Implement) based on the spec's current status and the existence of pm/tasks/${spec_id}.md.
+Read pm/specs/${spec_id}.md and follow your mode of operation (Plan, Implement, or Address) based on the spec's current status and the mode hint below.
 
 **Source directory:** All implementation code must be written inside \`$SOURCE_DIR\` (relative to project root). Create it if it doesn't exist.
+**Base branch:** $BASE_BRANCH
+**Review mode:** $REVIEW_MODE
+**Mode hint:** $mode_hint
 
 **Architecture:** If pm/architecture.md exists, read it and follow its guidelines.
 
@@ -662,6 +821,12 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" 
       return 0
     fi
 
+    # Dev created a PR and moved to in_review → enter review cycle on next iteration
+    if [ "$new_status" = "in_review" ]; then
+      echo "[orchestrator] Spec $spec_id moved to in_review. Entering review cycle."
+      continue
+    fi
+
     # If status never moved from backlog, the dev hit a blocker (e.g. unmet deps) — no point retrying
     if [ "$new_status" = "backlog" ]; then
       echo "[orchestrator] Spec $spec_id still in backlog — dev reported a blocker. Stopping."
@@ -678,10 +843,11 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" 
       answer_pending_for_spec "$spec_id"
     elif [ "$new_status" = "in_progress" ] && [ ! -f "$TASKS_DIR/${spec_id}.md" ]; then
       # Status moved but no task file — likely token exhaustion mid-planning.
-      # Retry: next cycle the agent will see in_progress + no task file → Plan Mode again,
-      # but won't redo update-status so it has more budget for actual work.
       echo "[orchestrator] Partial progress: status changed but no task file written."
       echo "[orchestrator] Retrying — agent will resume planning."
+    elif [ "$new_status" = "in_progress" ] && [ "$(get_pr_state "$spec_id")" = "open" ]; then
+      # Dev is in address mode, pushed changes — will re-enter review on next cycle
+      echo "[orchestrator] Dev addressed review comments. Will re-enter review cycle."
     else
       echo "[orchestrator] No pending questions and spec is not done."
       echo "[orchestrator] Dev agent may be stuck. Check pm/tasks/${spec_id}.md for details."
@@ -698,7 +864,7 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" 
 # Prints the SPEC-ID to stdout, or "NONE" if nothing is eligible.
 resolve_next_spec() {
   local result
-  result="$(cd "$PROJECT_ROOT" && claude -p "Read pm/specs/BACKLOG.md. Find the highest-priority spec that is NOT 'done' and NOT 'in_progress' (any other status counts as eligible — 'backlog', 'ready', etc.), whose dependencies are ALL either empty or have status 'done' (check each dependency's status by reading its spec file in pm/specs/).
+  result="$(cd "$PROJECT_ROOT" && claude -p "Read pm/specs/BACKLOG.md. Find the highest-priority spec that is NOT 'done', NOT 'in_progress', and NOT 'in_review' (any other status counts as eligible — 'backlog', 'ready', etc.), whose dependencies are ALL either empty or have status 'done' (check each dependency's status by reading its spec file in pm/specs/).
 
 Priority order: critical > high > medium > low. For specs with equal priority, prefer the one listed first (lower SPEC number).
 
@@ -805,6 +971,121 @@ cmd_dev_auto() {
   echo "[orchestrator] ========================================="
 }
 
+cmd_dev_address() {
+  local spec_id="$1"
+  local spec_file="$SPECS_DIR/${spec_id}.md"
+
+  if [ ! -f "$spec_file" ]; then
+    echo "[orchestrator] Error: Spec file not found: $spec_file"
+    return 1
+  fi
+
+  local status
+  status="$(get_spec_status "$spec_id")"
+
+  if [ "$status" = "done" ]; then
+    echo "[orchestrator] Spec $spec_id is already done."
+    return 0
+  fi
+
+  if [ "$status" = "in_review" ]; then
+    # Check if the PR was already merged (human/hybrid mode)
+    local pr_state
+    pr_state="$(get_pr_state "$spec_id")"
+    if [ "$pr_state" = "merged" ]; then
+      echo "[orchestrator] PR for $spec_id was merged. Marking as done."
+      # Use claude to update status so BACKLOG.md stays in sync
+      cd "$PROJECT_ROOT" && claude -p "Use /update-status $spec_id done" --allowedTools "Read,Write,Edit,Glob,Grep" 2>/dev/null
+      return 0
+    elif [ "$pr_state" = "none" ]; then
+      echo "[orchestrator] No open PR found for $spec_id. Nothing to address."
+      return 1
+    fi
+    echo "[orchestrator] PR for $spec_id is open and in review."
+    local pr_url
+    pr_url="$(get_pr_url "$spec_id")"
+    echo "[orchestrator] PR URL: $pr_url"
+    return 0
+  fi
+
+  if [ "$status" = "in_progress" ]; then
+    local pr_state
+    pr_state="$(get_pr_state "$spec_id")"
+    if [ "$pr_state" != "open" ]; then
+      echo "[orchestrator] No open PR found for $spec_id. Use dev-implement instead."
+      return 1
+    fi
+
+    echo "[orchestrator] Invoking Dev Agent — mode: address — for $spec_id"
+    echo "---"
+
+    invoke_agent "dev.md" "Implement spec $spec_id.
+
+Read pm/specs/${spec_id}.md and follow Address Mode — a reviewer has requested changes on your PR.
+
+**Source directory:** All implementation code must be written inside \`$SOURCE_DIR\` (relative to project root).
+**Base branch:** $BASE_BRANCH
+**Review mode:** $REVIEW_MODE
+**Mode hint:** address_review
+
+**Architecture:** If pm/architecture.md exists, read it and follow its guidelines.
+
+Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" "${spec_id}_address" "$DEV_MODEL"
+
+    echo ""
+
+    local new_status
+    new_status="$(get_spec_status "$spec_id")"
+    echo "[orchestrator] Spec $spec_id status after address: $new_status"
+
+    # If back to in_review, optionally run reviewer
+    if [ "$new_status" = "in_review" ] && [ "$REVIEW_MODE" = "agent" ]; then
+      review_cycle "$spec_id"
+    fi
+
+    return 0
+  fi
+
+  echo "[orchestrator] Spec $spec_id is in status '$status'. Cannot address — expected in_progress or in_review."
+  return 1
+}
+
+cmd_review_pending() {
+  local found=0
+
+  for spec_file in "$SPECS_DIR"/SPEC-*.md; do
+    [ -f "$spec_file" ] || continue
+    local st
+    st="$(grep -m1 '^status:' "$spec_file" | awk '{print $2}')"
+    [ "$st" != "in_review" ] && continue
+
+    local id
+    id="$(grep -m1 '^id:' "$spec_file" | awk '{print $2}')"
+    found=1
+
+    echo ""
+    echo "[orchestrator] Reviewing $id..."
+
+    if [ "$REVIEW_MODE" = "human" ]; then
+      local pr_url
+      pr_url="$(get_pr_url "$id")"
+      if [ -n "$pr_url" ]; then
+        echo "[orchestrator] PR for $id: $pr_url"
+      else
+        echo "[orchestrator] No open PR found for $id."
+      fi
+    else
+      # agent or hybrid — invoke reviewer
+      local review_result=0
+      review_cycle "$id" || review_result=$?
+    fi
+  done
+
+  if [ "$found" -eq 0 ]; then
+    echo "[orchestrator] No specs in review."
+  fi
+}
+
 # --- Main ---
 
 [ $# -lt 1 ] && usage
@@ -867,8 +1148,15 @@ case "$command" in
   dev-implement-next)
     cmd_dev_implement_next
     ;;
+  dev-address)
+    [ $# -lt 1 ] && { echo "Error: dev-address requires a SPEC-ID"; usage; }
+    cmd_dev_address "$1"
+    ;;
   dev-auto)
     cmd_dev_auto
+    ;;
+  review-pending)
+    cmd_review_pending
     ;;
   arch-init)
     [ $# -lt 1 ] && { echo "Error: arch-init requires a prompt or file path"; usage; }

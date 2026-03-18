@@ -6,7 +6,7 @@ This is a **meta-project**: a multi-agent orchestration framework that uses Clau
 
 The deliverable is the orchestration infrastructure:
 
-- `.agents/` — Agent identities (`pm.md`, `dev.md`, `architect.md`), orchestrator script, config
+- `.agents/` — Agent identities (`pm.md`, `dev.md`, `architect.md`, `reviewer.md`), orchestrator script, config
 - `.claude/commands/` — Skills (slash commands) agents use: `gen-spec`, `gen-answer`, `gen-question`, `update-status`, `gen-arch`
 
 ## What this repo is NOT
@@ -31,10 +31,21 @@ orchestrator.sh
 ├── Architect Agent (architect.md) — establishes and enforces architecture
 │   ├── /gen-arch             — create/update pm/architecture.md
 │   └── /gen-spec             — create corrective specs
-└── Dev Agent (dev.md)        — plans and implements specs
-    ├── /gen-question         — ask PM when blocked
-    └── /update-status        — transition spec status + sync BACKLOG.md
+├── Dev Agent (dev.md)        — plans, implements specs, creates PRs
+│   ├── /gen-question         — ask PM when blocked
+│   └── /update-status        — transition spec status + sync BACKLOG.md
+└── Reviewer Agent (reviewer.md) — reviews PRs via GitHub
+    └── /update-status        — transition spec status after review
 ```
+
+### Spec lifecycle
+
+`backlog → in_progress → in_review → done`
+
+Review modes (`orchestrator.review_mode` in config):
+- `agent` — Reviewer Agent reviews and merges automatically
+- `human` — Orchestrator creates PR, human reviews on GitHub
+- `hybrid` — Reviewer Agent reviews, human merges
 
 ## Key commands
 
@@ -47,9 +58,11 @@ orchestrator.sh arch-init <prompt>         # Generate initial architecture doc
 orchestrator.sh arch-add <prompt>          # Update architecture with new guidelines
 orchestrator.sh arch-add-interactive       # Discuss and update architecture interactively
 orchestrator.sh arch-review                # Review code compliance with architecture
-orchestrator.sh dev-implement SPEC-XXX     # Implement a spec (dev→pm→dev loop)
+orchestrator.sh dev-implement SPEC-XXX     # Implement a spec (dev→pm→dev→review loop)
 orchestrator.sh dev-implement-next         # Auto-pick and implement next eligible spec
+orchestrator.sh dev-address SPEC-XXX       # Address review comments on a spec's PR
 orchestrator.sh dev-auto                   # Unattended: implement all eligible specs continuously
+orchestrator.sh review-pending             # Review all specs in 'in_review' status
 ```
 
 Stop `dev-auto` with `Ctrl+C` or `touch .agents/.stop` from another terminal.
@@ -63,9 +76,12 @@ After any change to commands, configuration, or architecture, check if `README.m
 `.agents/config.yaml` — project-level settings:
 - `project.source_dir` — where the dev agent writes code (default: `src/`)
 - `orchestrator.max_cycles` — max dev→pm→dev cycles (default: 3)
+- `orchestrator.base_branch` — base branch for spec branches / PR target (default: `main`)
+- `orchestrator.review_mode` — PR review workflow: `agent`, `human`, or `hybrid` (default: `agent`)
 - `agents.pm_model` — model for PM Agent (default: `opus`)
 - `agents.dev_model` — model for Dev Agent (default: `opus`)
 - `agents.arch_model` — model for Architect Agent (default: `opus`)
+- `agents.reviewer_model` — model for Reviewer Agent (default: `opus`)
 
 ## Conventions
 
@@ -74,4 +90,4 @@ After any change to commands, configuration, or architecture, check if `README.m
 - The orchestrator invokes agents via `claude -p` with scoped `--allowedTools`
 - Both agents have web access (WebSearch, WebFetch) for research
 - Architect Agent has no Bash access (read/write only, same as PM)
-- PM Agent has no Bash access (read/write only); Dev Agent has Bash for tests/builds
+- PM Agent has no Bash access (read/write only); Dev and Reviewer Agents have Bash for tests/builds/gh CLI

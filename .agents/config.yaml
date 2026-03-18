@@ -6,8 +6,11 @@ project:
 
 orchestrator:
   max_cycles: 3             # dev→pm→dev cycles before requiring human intervention
+  base_branch: main         # base branch for spec branches (PR target)
+  review_mode: agent        # agent | human | hybrid (PR review workflow)
 
 agents:
   pm_model: opus            # model for PM Agent (sonnet, opus, haiku)
   dev_model: opus           # model for Dev Agent (sonnet, opus, haiku)
   arch_model: opus          # model for Architect Agent (sonnet, opus, haiku)
+  reviewer_model: opus      # model for Reviewer Agent (sonnet, opus, haiku)
