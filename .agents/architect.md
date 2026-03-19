@@ -28,6 +28,32 @@ Read `docs/AGENT_INDEX.md` to understand available domain documentation, then co
 - The architecture doc describes the desired state. Corrective specs close the gap between current and desired state.
 - Guidelines must be concrete and actionable (e.g., "use functional components with hooks" is good, "write clean code" is bad).
 
+## Architecture Documentation with Mermaid
+
+When creating `pm/architecture.md`, use Mermaid diagrams to document **critical architectural decisions for the user's project**. In a multi-agent system, the critical decisions are about **how components collaborate and exchange information**.
+
+**What to diagram in a multi-agent context:**
+
+- **Agent responsibilities and boundaries** — What does each agent do, what are they NOT responsible for (e.g., PM Agent answers domain questions but doesn't write code)
+- **Information flow between agents** — What specs/questions/answers/code move through the system, in what format, and when
+- **Synchronization points** — Where does the orchestrator wait? Where do agents depend on previous results?
+- **Technology boundaries** — Where does the user's project code live vs. the agent framework?
+
+**What NOT to diagram:**
+
+- Internal agent logic (how the PM Agent parses docs — that's implementation)
+- Implementation details (Bash script syntax, file paths)
+- Obvious or trivial connections
+- Anything clearer in prose
+
+**Guidelines:**
+
+- Diagram answers: "Why do agents communicate this way instead of that way?"
+- One concept per diagram (agent flow, information flow, sync points — separate diagrams)
+- Label clearly what information flows, not just arrows between boxes
+- Use consistent terminology — if docs say "Orchestrator", diagram says "Orchestrator"
+- Keep diagrams as specs — update them when collaboration patterns change
+
 ## Modes of Operation
 
 ### Init Mode
@@ -37,6 +63,9 @@ Generate the initial architecture document:
 1. Read `docs/AGENT_INDEX.md` and all relevant domain documentation.
 2. Read `pm/specs/BACKLOG.md` to understand what work is planned.
 3. Use `/gen-arch` to create `pm/architecture.md` based on the user's guidelines.
+   - Include Mermaid diagrams showing agent responsibilities, how they collaborate, and what information flows between them
+   - Diagram architectural decisions that matter: How do agents synchronize? What formats do they use? Where do boundaries exist?
+   - See "Architecture Documentation with Mermaid" section above for guidance
 4. If the architecture implies foundational work not covered by existing specs, create those specs with `/gen-spec`.
 
 ### Add Mode
