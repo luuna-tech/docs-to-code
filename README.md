@@ -1,6 +1,13 @@
-# Project Name
+# docs-to-code
 
-<!-- Replace with your project description -->
+An automated software development pipeline powered by [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Write your domain documentation, and a team of AI agents will generate a product backlog, define architecture, implement code on isolated branches, and review PRs — with minimal human intervention.
+
+**Use this repo as a template** to bootstrap new projects. Create a repo from the template, add your domain docs, configure the agents, and let them build.
+
+```bash
+gh repo create my-project --template luuna-tech/docs-to-code
+cd my-project
+```
 
 ## Getting started
 
