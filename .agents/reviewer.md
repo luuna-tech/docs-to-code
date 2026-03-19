@@ -92,7 +92,7 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews --input /tmp/review-payload.j
 
 - **If no blocking issues and `review_mode` is `agent`:**
   Submit review with `APPROVE` event.
-  Merge the PR: `gh pr merge <number> --squash --delete-branch`
+  Merge the PR: `gh pr merge <number> --merge --delete-branch`
   Then: `/update-status SPEC-XXX done`
 
 - **If no blocking issues and `review_mode` is `hybrid`:**

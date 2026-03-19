@@ -371,6 +371,35 @@ get_pr_url() {
   cd "$PROJECT_ROOT" && gh pr list --head "spec/$spec_id" --state open --json url -q '.[0].url' 2>/dev/null || echo ""
 }
 
+# After a PR is merged and status updated to done, ensure the status changes
+# (pm/specs/ and pm/specs/BACKLOG.md) are committed and pushed on the base branch.
+sync_status_to_base() {
+  local spec_id="$1"
+
+  echo "[orchestrator] Syncing status changes to $BASE_BRANCH..."
+
+  (
+    cd "$PROJECT_ROOT"
+    git checkout "$BASE_BRANCH" 2>/dev/null || git checkout -b "$BASE_BRANCH"
+    git pull origin "$BASE_BRANCH" 2>/dev/null || true
+
+    # Stage only spec and backlog status files
+    git add pm/specs/"${spec_id}.md" pm/specs/BACKLOG.md 2>/dev/null || true
+
+    # Also stage task file if it was updated
+    [ -f "pm/tasks/${spec_id}.md" ] && git add "pm/tasks/${spec_id}.md" 2>/dev/null || true
+
+    # Only commit if there are staged changes
+    if ! git diff --cached --quiet 2>/dev/null; then
+      git commit -m "status(${spec_id}): done"
+      git push origin "$BASE_BRANCH"
+      echo "[orchestrator] Status changes committed and pushed to $BASE_BRANCH."
+    else
+      echo "[orchestrator] No status changes to commit."
+    fi
+  )
+}
+
 # Invoke the review cycle for a spec that is in_review.
 # Returns: 0 if review completed (done or approved for human merge), 1 to continue cycling.
 review_cycle() {
@@ -397,6 +426,7 @@ Read the PR diff with: gh pr diff <number>
 Read full source files for context.
 
 **Review mode:** $REVIEW_MODE
+**Base branch:** $BASE_BRANCH
 **Source directory:** \`$SOURCE_DIR\`
 
 Follow your review process: gather context, review against all dimensions, submit review via gh api, and take the appropriate action based on review mode and findings.
@@ -412,6 +442,7 @@ Use /update-status to transition the spec status as needed." "$DEV_AGENT_TOOLS" 
 
   if [ "$review_status" = "done" ]; then
     echo "[orchestrator] Spec $spec_id merged and completed by reviewer."
+    sync_status_to_base "$spec_id"
     return 0
   fi
 
@@ -994,8 +1025,11 @@ cmd_dev_address() {
     pr_state="$(get_pr_state "$spec_id")"
     if [ "$pr_state" = "merged" ]; then
       echo "[orchestrator] PR for $spec_id was merged. Marking as done."
+      # Ensure we're on base branch before updating status files
+      (cd "$PROJECT_ROOT" && git checkout "$BASE_BRANCH" 2>/dev/null && git pull origin "$BASE_BRANCH" 2>/dev/null) || true
       # Use claude to update status so BACKLOG.md stays in sync
       cd "$PROJECT_ROOT" && claude -p "Use /update-status $spec_id done" --allowedTools "Read,Write,Edit,Glob,Grep" 2>/dev/null
+      sync_status_to_base "$spec_id"
       return 0
     elif [ "$pr_state" = "none" ]; then
       echo "[orchestrator] No open PR found for $spec_id. Nothing to address."
