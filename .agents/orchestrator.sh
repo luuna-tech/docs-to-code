@@ -380,8 +380,8 @@ sync_status_to_base() {
 
   (
     cd "$PROJECT_ROOT"
-    git checkout "$BASE_BRANCH" 2>/dev/null || git checkout -b "$BASE_BRANCH"
-    git pull origin "$BASE_BRANCH" 2>/dev/null || true
+    git checkout "$BASE_BRANCH"
+    git pull origin "$BASE_BRANCH" || true
 
     # Stage only spec and backlog status files
     git add pm/specs/"${spec_id}.md" pm/specs/BACKLOG.md 2>/dev/null || true
@@ -391,7 +391,7 @@ sync_status_to_base() {
 
     # Only commit if there are staged changes
     if ! git diff --cached --quiet 2>/dev/null; then
-      git commit -m "status(${spec_id}): done"
+      git commit -m "chore(${spec_id}): mark spec as done" --no-verify
       git push origin "$BASE_BRANCH"
       echo "[orchestrator] Status changes committed and pushed to $BASE_BRANCH."
     else
