@@ -913,6 +913,30 @@ Reply with ONLY the SPEC-ID (e.g., SPEC-001) and nothing else. If no eligible sp
   echo "$result" | tr -d '[:space:]'
 }
 
+cmd_dev_implement_batch() {
+  local completed=0 failed=0 failed_specs=""
+
+  for sid in "$@"; do
+    echo ""
+    echo "[orchestrator] --- Implementing $sid (completed: $completed, failed: $failed) ---"
+    local result=0
+    cmd_dev_implement "$sid" || result=$?
+    if [ "$result" -eq 0 ]; then
+      completed=$((completed + 1))
+    else
+      failed=$((failed + 1))
+      failed_specs="${failed_specs} ${sid}"
+    fi
+  done
+
+  echo ""
+  echo "[orchestrator] ========================================="
+  echo "[orchestrator]         BATCH SUMMARY"
+  echo "[orchestrator]  Completed: $completed | Failed: $failed"
+  [ -n "$failed_specs" ] && echo "[orchestrator]  Failed:$failed_specs"
+  echo "[orchestrator] ========================================="
+}
+
 cmd_dev_implement_next() {
   echo "[orchestrator] Resolving next eligible spec from backlog..."
 
@@ -1186,25 +1210,7 @@ case "$command" in
     if [ $# -eq 1 ]; then
       cmd_dev_implement "$1"
     else
-      local completed=0 failed=0 failed_specs=""
-      for sid in "$@"; do
-        echo ""
-        echo "[orchestrator] --- Implementing $sid (completed: $completed, failed: $failed) ---"
-        local result=0
-        cmd_dev_implement "$sid" || result=$?
-        if [ "$result" -eq 0 ]; then
-          completed=$((completed + 1))
-        else
-          failed=$((failed + 1))
-          failed_specs="${failed_specs} ${sid}"
-        fi
-      done
-      echo ""
-      echo "[orchestrator] ========================================="
-      echo "[orchestrator]         BATCH SUMMARY"
-      echo "[orchestrator]  Completed: $completed | Failed: $failed"
-      [ -n "$failed_specs" ] && echo "[orchestrator]  Failed:$failed_specs"
-      echo "[orchestrator] ========================================="
+      cmd_dev_implement_batch "$@"
     fi
     ;;
   dev-implement-next)
