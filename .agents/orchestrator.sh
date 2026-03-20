@@ -68,7 +68,8 @@ Commands:
   pm-add-interactive         Start a conversation with the PM to refine a requirement
                              and generate spec(s) interactively.
 
-  dev-implement <SPEC-ID>    Implement a spec (plan→ask→answer→implement→review loop).
+  dev-implement <SPEC-ID...> Implement one or more specs in series.
+                             Accepts multiple SPEC-IDs (e.g., dev-implement SPEC-001 SPEC-003).
 
   dev-implement-next         Find and implement the next eligible spec from the backlog.
 
@@ -103,6 +104,7 @@ Examples:
   $(basename "$0") pm-answer pm/questions/SPEC-003-q1.md
   $(basename "$0") -v pm-answer-pending
   $(basename "$0") dev-implement SPEC-001
+  $(basename "$0") dev-implement SPEC-001 SPEC-003 SPEC-005
   $(basename "$0") -v --max-cycles 5 dev-implement SPEC-002
   $(basename "$0") dev-implement-next
   $(basename "$0") pm-add "Add user authentication with email/password"
@@ -1180,8 +1182,30 @@ case "$command" in
     cmd_pm_add_interactive
     ;;
   dev-implement)
-    [ $# -lt 1 ] && { echo "Error: dev-implement requires a SPEC-ID"; usage; }
-    cmd_dev_implement "$1"
+    [ $# -lt 1 ] && { echo "Error: dev-implement requires at least one SPEC-ID"; usage; }
+    if [ $# -eq 1 ]; then
+      cmd_dev_implement "$1"
+    else
+      local completed=0 failed=0 failed_specs=""
+      for sid in "$@"; do
+        echo ""
+        echo "[orchestrator] --- Implementing $sid (completed: $completed, failed: $failed) ---"
+        local result=0
+        cmd_dev_implement "$sid" || result=$?
+        if [ "$result" -eq 0 ]; then
+          completed=$((completed + 1))
+        else
+          failed=$((failed + 1))
+          failed_specs="${failed_specs} ${sid}"
+        fi
+      done
+      echo ""
+      echo "[orchestrator] ========================================="
+      echo "[orchestrator]         BATCH SUMMARY"
+      echo "[orchestrator]  Completed: $completed | Failed: $failed"
+      [ -n "$failed_specs" ] && echo "[orchestrator]  Failed:$failed_specs"
+      echo "[orchestrator] ========================================="
+    fi
     ;;
   dev-implement-next)
     cmd_dev_implement_next
