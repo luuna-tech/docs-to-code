@@ -373,36 +373,37 @@ get_pr_url() {
 
 # After a PR is merged and status updated to done, ensure the status changes
 # (pm/specs/ and pm/specs/BACKLOG.md) are committed and pushed on the base branch.
+# Uses claude -p to handle unexpected git states (conflicts, dirty tree, etc.).
 sync_status_to_base() {
   local spec_id="$1"
 
   echo "[orchestrator] Syncing status changes to $BASE_BRANCH..."
 
-  (
-    cd "$PROJECT_ROOT"
-    git checkout "$BASE_BRANCH"
-    git pull origin "$BASE_BRANCH" || true
+  (cd "$PROJECT_ROOT" && claude -p "Spec $spec_id is now done. Your job is to ensure the status changes are committed and pushed to the $BASE_BRANCH branch.
 
-    # Stage only spec and backlog status files
-    git add pm/specs/"${spec_id}.md" pm/specs/BACKLOG.md 2>/dev/null || true
+## Context
 
-    # Also stage task file if it was updated
-    [ -f "pm/tasks/${spec_id}.md" ] && git add "pm/tasks/${spec_id}.md" 2>/dev/null || true
+The spec status was just updated to done (files pm/specs/${spec_id}.md and pm/specs/BACKLOG.md were modified). The task file pm/tasks/${spec_id}.md may also have been updated. These changes need to be on the $BASE_BRANCH branch, committed, and pushed.
 
-    # Only commit if there are staged changes
-    if ! git diff --cached --quiet 2>/dev/null; then
-      git commit --no-verify -m "$(cat <<CMTEOF
-chore(${spec_id}): mark spec as done
+## Steps
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-CMTEOF
-)"
-      git push origin "$BASE_BRANCH"
-      echo "[orchestrator] Status changes committed and pushed to $BASE_BRANCH."
-    else
-      echo "[orchestrator] No status changes to commit."
-    fi
-  )
+1. Check \`git status\` to understand the current state (branch, dirty files, etc.).
+2. Switch to the \`$BASE_BRANCH\` branch. Handle any issues:
+   - If there are uncommitted changes, stash them first, switch, then apply.
+   - If already on the right branch, continue.
+3. Pull latest from remote: \`git pull origin $BASE_BRANCH\`. Resolve any conflicts if needed.
+4. Ensure pm/specs/${spec_id}.md, pm/specs/BACKLOG.md, and pm/tasks/${spec_id}.md (if it exists) reflect the done status. If they were lost during branch switch, use /update-status $spec_id done to regenerate.
+5. Stage ONLY these files: pm/specs/${spec_id}.md, pm/specs/BACKLOG.md, and pm/tasks/${spec_id}.md.
+6. If there are staged changes, commit with:
+   \`\`\`
+   git commit --no-verify -m 'chore(${spec_id}): mark spec as done'
+   \`\`\`
+7. Push: \`git push origin $BASE_BRANCH\`
+8. If nothing to commit (already up to date), that is fine — just confirm.
+
+Do NOT modify any files other than staging them. Do NOT commit unrelated changes." --allowedTools "Bash,Read,Glob,Grep" 2>/dev/null)
+
+  echo "[orchestrator] Sync complete for $spec_id."
 }
 
 # Invoke the review cycle for a spec that is in_review.
@@ -1030,9 +1031,7 @@ cmd_dev_address() {
     pr_state="$(get_pr_state "$spec_id")"
     if [ "$pr_state" = "merged" ]; then
       echo "[orchestrator] PR for $spec_id was merged. Marking as done."
-      # Ensure we're on base branch before updating status files
-      (cd "$PROJECT_ROOT" && git checkout "$BASE_BRANCH" 2>/dev/null && git pull origin "$BASE_BRANCH" 2>/dev/null) || true
-      # Use claude to update status so BACKLOG.md stays in sync
+      # Use claude to update status, then sync to base branch
       cd "$PROJECT_ROOT" && claude -p "Use /update-status $spec_id done" --allowedTools "Read,Write,Edit,Glob,Grep" 2>/dev/null
       sync_status_to_base "$spec_id"
       return 0
