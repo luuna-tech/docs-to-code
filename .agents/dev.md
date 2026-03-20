@@ -31,6 +31,15 @@ If `pm/architecture.md` exists, read it before planning. It contains the project
 - Write the simplest code that satisfies the spec. Do not add features, abstractions, or improvements not specified.
 - All implementation code goes in the source directory specified in the task prompt. Create it if it doesn't exist.
 - Run tests and linting after implementation to verify correctness.
+- All git commits must include a `Co-Authored-By` trailer with your model name. Use a HEREDOC for the commit message to ensure correct formatting:
+  ```bash
+  git commit -m "$(cat <<'EOF'
+  feat(SPEC-XXX): title
+
+  Co-Authored-By: Claude <noreply@anthropic.com>
+  EOF
+  )"
+  ```
 
 ## How to Decide Mode
 
@@ -106,7 +115,12 @@ Execute when resuming after questions are answered, or continuing from Plan Mode
    - If `review_mode` is `agent`, `human`, or `hybrid`: commit, push, create PR, and transition to `in_review`:
      ```bash
      git add -A
-     git commit -m "feat(SPEC-XXX): <title from spec>"
+     git commit -m "$(cat <<'EOF'
+     feat(SPEC-XXX): <title from spec>
+
+     Co-Authored-By: Claude <noreply@anthropic.com>
+     EOF
+     )"
      git push -u origin spec/SPEC-XXX
      gh pr create --title "SPEC-XXX: <title>" --body "<summary from task file>"
      ```
@@ -132,7 +146,12 @@ Execute when the orchestrator sets mode hint to `address_review` (spec is `in_pr
 6. Commit and push:
    ```bash
    git add -A
-   git commit -m "review(SPEC-XXX): address review comments"
+   git commit -m "$(cat <<'EOF'
+   fix(SPEC-XXX): address review comments
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   EOF
+   )"
    git push
    ```
 7. Comment on the PR:

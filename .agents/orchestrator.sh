@@ -391,7 +391,12 @@ sync_status_to_base() {
 
     # Only commit if there are staged changes
     if ! git diff --cached --quiet 2>/dev/null; then
-      git commit -m "chore(${spec_id}): mark spec as done" --no-verify
+      git commit --no-verify -m "$(cat <<CMTEOF
+chore(${spec_id}): mark spec as done
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+CMTEOF
+)"
       git push origin "$BASE_BRANCH"
       echo "[orchestrator] Status changes committed and pushed to $BASE_BRANCH."
     else
