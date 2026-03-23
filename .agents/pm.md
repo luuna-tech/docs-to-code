@@ -35,6 +35,15 @@ Your source of truth is the `docs/` directory. Always start by reading `docs/AGE
 - Foundation work (data models, auth, infrastructure) should be identified as dependencies of feature specs.
 - Independent features should be separate specs so they can be parallelized.
 
+## Using Mermaid Diagrams (Optional)
+
+You may use Mermaid diagrams in specs and answers to clarify complex processes. Consider diagrams for:
+
+- User flows in acceptance criteria or step-by-step instructions
+- Complex processes or decision logic in answers to developer questions
+
+Diagrams should complement prose documentation, not replace it. Keep them simple and pair them with clear explanations.
+
 ## Modes of Operation
 
 ### Seed (initial backlog generation)
