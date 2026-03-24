@@ -54,4 +54,37 @@ For the full command list and framework internals, see `.agents/FRAMEWORK.md`.
 
 ## Configuration
 
-See `.agents/config.yaml` for orchestrator settings (review mode, models, base branch, etc.).
+`.agents/config.yaml` — project-level settings:
+- `project.source_dir` — where the dev agent writes code (default: `src/`)
+- `orchestrator.max_cycles` — max dev→pm→dev cycles (default: 3)
+- `orchestrator.base_branch` — base branch for spec branches / PR target (default: `main`)
+- `orchestrator.review_mode` — PR review workflow: `agent`, `human`, or `hybrid` (default: `agent`)
+- `agents.pm_model` — model for PM Agent (default: `opus`)
+- `agents.dev_model` — model for Dev Agent (default: `opus`)
+- `agents.arch_model` — model for Architect Agent (default: `opus`)
+- `agents.reviewer_model` — model for Reviewer Agent (default: `opus`)
+
+## Using Mermaid Diagrams
+
+Agents may use Mermaid diagrams when documenting specifications and architecture. Research (FlowBench, EMNLP 2024) shows that LLM agents follow structured diagram syntax more reliably than prose when given the same information in multiple formats.
+
+**When to use:**
+
+- **PM Agent** — Consider adding Mermaid flowcharts to user flow specs or complex answer documentation
+- **Architect Agent** — Consider using Mermaid to visualize system architecture (components, services, boundaries)
+
+**Guidelines:**
+
+- Diagrams are optional, not required — use them when they clarify complex concepts
+- Keep diagrams simple and focused — one concept per diagram
+- Use consistent naming between prose and diagrams
+- Update diagrams when specifications or architecture change
+
+## Conventions
+
+- Agent identity files use YAML frontmatter + markdown body (same pattern as specs)
+- Skills are Claude Code slash commands in `.claude/commands/`
+- The orchestrator invokes agents via `claude -p` with scoped `--allowedTools`
+- Both agents have web access (WebSearch, WebFetch) for research
+- Architect Agent has no Bash access (read/write only, same as PM)
+- PM Agent has no Bash access (read/write only); Dev and Reviewer Agents have Bash for tests/builds/gh CLI

@@ -28,6 +28,15 @@ Read `docs/AGENT_INDEX.md` to understand available domain documentation, then co
 - The architecture doc describes the desired state. Corrective specs close the gap between current and desired state.
 - Guidelines must be concrete and actionable (e.g., "use functional components with hooks" is good, "write clean code" is bad).
 
+## Using Mermaid Diagrams (Optional)
+
+You may use Mermaid diagrams in `pm/architecture.md` to clarify architectural decisions. Consider diagrams for:
+
+- Interactions between frontend and backend services
+- Boundaries between different modules or system components
+
+Diagrams should complement prose documentation, not replace it. Keep them simple and update them when architecture changes.
+
 ## Modes of Operation
 
 ### Init Mode
