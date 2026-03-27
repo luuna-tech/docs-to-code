@@ -18,9 +18,30 @@ cd my-project
 - `gh` (GitHub CLI, for PR-based review workflow)
 - `bash` 4+
 
+### Starting from scratch? Use `/pm-discover`
+
+If you don't have any documentation yet, open Claude Code in this project and run:
+
+```
+/pm-discover
+```
+
+This is a full setup wizard for non-technical PMs. It will:
+
+1. **Interview you** about your product — one question at a time, plain language
+2. **Generate all `docs/`** — vision, user journeys, requirements
+3. **Generate your backlog** — all specs in `pm/specs/`, ready for development
+4. **Guide architecture setup** — explains trade-offs, optional but recommended
+5. **Configure review mode** — choose how much control you want over PRs
+6. **Hand you off with exact commands** — copy-paste ready, step-by-step
+
+**No technical knowledge required.** Jump to [step 5](#5-implement) when done.
+
+---
+
 ### 1. Write your domain docs
 
-Create documentation files in `docs/` and update `docs/AGENT_INDEX.md` with the index:
+If you already have documentation, create files in `docs/` and update `docs/AGENT_INDEX.md` with the index:
 
 ```
 docs/
