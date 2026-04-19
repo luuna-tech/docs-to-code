@@ -3,3 +3,7 @@
 
 # Stop signal file
 .agents/.stop
+
+# Local Claude Code settings (machine-specific, not for sharing)
+.claude/settings.json
+.claude/settings.local.json
